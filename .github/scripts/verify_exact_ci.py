@@ -30,6 +30,17 @@ def expected_jobs(workflow: Path) -> set[str]:
         if not matrix:
             expected.add(job_id)
             continue
+        if job_id == "arm-tests":
+            # The native artifact producer is a separate required non-matrix
+            # job; all three consumers must pass, never silently get skipped.
+            if set(matrix) != {"suite"} or matrix["suite"] != [
+                "core",
+                "ocr",
+                "mcp",
+            ]:
+                raise ValueError("ARM suite matrix must cover core, ocr and mcp")
+            expected.update(f"arm-tests ({suite})" for suite in matrix["suite"])
+            continue
         if set(matrix) - {"os", "python-version", "include", "exclude"}:
             raise ValueError(f"unsupported matrix axes in {job_id}")
         if "os" not in matrix or "python-version" not in matrix:
@@ -46,6 +57,8 @@ def expected_jobs(workflow: Path) -> set[str]:
         for cell in matrix.get("exclude", []):
             combos.discard((str(cell["os"]), str(cell["python-version"])))
         expected.update(f"{job_id} ({system}, {py})" for system, py in combos)
+    if not {"arm-wheel", "arm-tests (core)", "arm-tests (ocr)", "arm-tests (mcp)"} <= expected:
+        raise ValueError("incomplete Windows ARM wheel producer or consumer matrix")
     if not expected:
         raise ValueError("empty test matrix")
     return expected
