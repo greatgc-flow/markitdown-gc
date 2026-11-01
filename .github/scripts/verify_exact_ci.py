@@ -57,7 +57,10 @@ def expected_jobs(workflow: Path) -> set[str]:
         for cell in matrix.get("exclude", []):
             combos.discard((str(cell["os"]), str(cell["python-version"])))
         expected.update(f"{job_id} ({system}, {py})" for system, py in combos)
-    if not {"arm-wheel", "arm-tests (core)", "arm-tests (ocr)", "arm-tests (mcp)"} <= expected:
+    if (
+        not {"arm-wheel", "arm-tests (core)", "arm-tests (ocr)", "arm-tests (mcp)"}
+        <= expected
+    ):
         raise ValueError("incomplete Windows ARM wheel producer or consumer matrix")
     if not expected:
         raise ValueError("empty test matrix")
