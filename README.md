@@ -65,12 +65,12 @@ conda activate markitdown
 
 ## Installation
 
-To install the built-in document converters, use `pip install markitdown-gc`. PDF, DOCX, PPTX, XLSX/XLS, Outlook, and HWP/HWPX are included by default. Add `[all]` only when you need optional audio, YouTube, or Azure dependencies. Alternatively, install from source:
+To install MarkItDown, use pip: `pip install 'markitdown-gc[all]'`. Alternatively, you can install it from the source:
 
 ```bash
 git clone https://github.com/greatgc-flow/markitdown-gc.git
 cd markitdown-gc
-pip install -e packages/markitdown
+pip install -e 'packages/markitdown[all]'
 ```
 
 ## Usage
@@ -102,25 +102,32 @@ cat path-to-file.pdf | markitdown-gc
 ```
 
 ### Optional Dependencies
-
-The default install already includes all document converters. Per-document extras
-(`[pdf]`, `[docx]`, `[pptx]`, `[xlsx]`, `[xls]`, `[hwp]`, and `[outlook]`)
-remain available as compatibility aliases; they **do not** reduce base dependencies.
-
-Install only the additional integrations you need, for example:
+MarkItDown has optional dependencies for activating various file formats. The `[all]` option includes these, including HWP/HWPX. You can also install them individually for more control. For example:
 
 ```bash
-pip install 'markitdown-gc[audio-transcription]'
+pip install 'markitdown-gc[pdf, docx, pptx]'
 ```
 
-Supported integration extras: `[audio-transcription]`, `[youtube-transcription]`,
-`[az-doc-intel]`, and `[az-content-understanding]`. `[all]` adds all optional
-integrations. External binaries (such as FFmpeg) and service credentials must
-still be configured separately; cloud services may incur API charges.
+will install only the dependencies for PDF, DOCX, and PPTX files.
+
+At the moment, the following optional dependencies are available:
+
+* `[all]` Installs all optional dependencies
+* `[hwp]` Installs dependencies for HWP5 and HWPX files
+* `[pptx]` Installs dependencies for PowerPoint files
+* `[docx]` Installs dependencies for Word files
+* `[xlsx]` Installs dependencies for Excel files
+* `[xls]` Installs dependencies for older Excel files
+* `[pdf]` Installs dependencies for PDF files
+* `[outlook]` Installs dependencies for Outlook messages
+* `[az-doc-intel]` Installs dependencies for Azure Document Intelligence
+* `[az-content-understanding]` Installs dependencies for Azure Content Understanding
+* `[audio-transcription]` Installs dependencies for audio transcription of wav and mp3 files
+* `[youtube-transcription]` Installs dependencies for fetching YouTube video transcription
 
 ### HWP/HWPX
 
-HWP5 and HWPX support is installed by default. The `[hwp]` extra remains a compatibility alias.
+HWP5 and HWPX support is included in `[all]`, or can be installed separately with `pip install 'markitdown-gc[hwp]'`.
 
 The backend, `hwp-hwpx-parser`, is pure Python and supports all platforms without a native HWP dependency.
 
