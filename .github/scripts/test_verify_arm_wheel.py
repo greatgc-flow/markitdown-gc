@@ -91,6 +91,17 @@ class TestArmWheelManifest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly one pinned"):
             check(self.wheels, self.constraints, "write")
 
+    def test_wrong_distribution_metadata_fails(self) -> None:
+        with zipfile.ZipFile(self.wheel, "w") as archive:
+            archive.writestr("other-1.0.dist-info/WHEEL", "Wheel-Version: 1.0\\n")
+        with self.assertRaisesRegex(ValueError, "expected cryptography package metadata"):
+            check(self.wheels, self.constraints, "write")
+
+    def test_invalid_manifest_json_fails(self) -> None:
+        (self.wheels / "manifest.json").write_text("{broken", encoding="utf-8")
+        with self.assertRaises(json.JSONDecodeError):
+            check(self.wheels, self.constraints, "verify")
+
     def test_nonzip_wheel_fails(self) -> None:
         self.wheel.write_bytes(b"not a real wheel archive")
         with self.assertRaises(zipfile.BadZipFile):
