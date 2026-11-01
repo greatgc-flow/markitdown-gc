@@ -31,16 +31,17 @@ class TestExactReleaseCI(unittest.TestCase):
         ]
 
     def test_matrix_includes_all_core_ocr_and_mcp_lanes(self) -> None:
-        self.assertEqual(len(self.jobs), 24)
+        self.assertEqual(len(self.jobs), 25)
         self.assertTrue(
-            any(n.startswith("tests (windows-11-vs2026-arm,") for n in self.jobs)
+            {"arm-wheel", "arm-tests (core)", "arm-tests (ocr)", "arm-tests (mcp)"}
+            <= self.jobs
         )
-        self.assertTrue(
-            any(n.startswith("ocr-tests (windows-11-vs2026-arm,") for n in self.jobs)
+        self.assertFalse(
+            any("windows-11-vs2026-arm" in name for name in self.jobs)
         )
-        self.assertTrue(
-            any(n.startswith("mcp-tests (windows-11-vs2026-arm,") for n in self.jobs)
-        )
+        self.assertTrue(any(name.startswith("tests (windows-latest,") for name in self.jobs))
+        self.assertTrue(any(name.startswith("ocr-tests (ubuntu-latest,") for name in self.jobs))
+        self.assertTrue(any(name.startswith("mcp-tests (ubuntu-latest,") for name in self.jobs))
 
     def test_exact_successful_main_push_is_accepted(self) -> None:
         validate_run(self._run(), self._jobs(), "a" * 40, self.jobs)
