@@ -1,4 +1,5 @@
 """Offline tests for single-build Windows ARM cryptography wheel provenance."""
+
 from __future__ import annotations
 
 import io
@@ -94,7 +95,9 @@ class TestArmWheelManifest(unittest.TestCase):
     def test_wrong_distribution_metadata_fails(self) -> None:
         with zipfile.ZipFile(self.wheel, "w") as archive:
             archive.writestr("other-1.0.dist-info/WHEEL", "Wheel-Version: 1.0\\n")
-        with self.assertRaisesRegex(ValueError, "expected cryptography package metadata"):
+        with self.assertRaisesRegex(
+            ValueError, "expected cryptography package metadata"
+        ):
             check(self.wheels, self.constraints, "write")
 
     def test_invalid_manifest_json_fails(self) -> None:
@@ -109,9 +112,12 @@ class TestArmWheelManifest(unittest.TestCase):
 
     def test_cli_success_and_hold(self) -> None:
         args = [
-            "--wheel-dir", str(self.wheels),
-            "--constraints", str(self.constraints),
-            "--mode", "write",
+            "--wheel-dir",
+            str(self.wheels),
+            "--constraints",
+            str(self.constraints),
+            "--mode",
+            "write",
         ]
         stdout = io.StringIO()
         with redirect_stdout(stdout):
