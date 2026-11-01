@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install 'PyYAML>=6,<7'
-      - run: python -m unittest discover -s .github/scripts -p 'test_verify_exact_ci.py' -v
+      - run: python -m unittest discover -s .github/scripts -p 'test_verify_*.py' -v
 
   tests:
     runs-on: ${{ matrix.os }}
@@ -43,18 +43,12 @@ jobs:
             python-version: "3.12"
           - os: windows-latest
             python-version: "3.15"
-          - os: windows-11-vs2026-arm
-            python-version: "3.12"
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Build native Cryptography wheel
-        if: runner.os == 'Windows' && runner.arch == 'ARM64'
-        uses: ./.github/actions/build-arm-cryptography
 
       - name: Install media tools
         if: runner.os == 'Linux'
@@ -83,18 +77,12 @@ jobs:
         include:
           - os: windows-latest
             python-version: "3.12"
-          - os: windows-11-vs2026-arm
-            python-version: "3.12"
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Build native Cryptography wheel
-        if: runner.os == 'Windows' && runner.arch == 'ARM64'
-        uses: ./.github/actions/build-arm-cryptography
 
       # Install markitdown from the local checkout rather than PyPI, so the
       # plugin is tested against the sibling package it ships alongside.
@@ -117,8 +105,6 @@ jobs:
         include:
           - os: windows-latest
             python-version: "3.12"
-          - os: windows-11-vs2026-arm
-            python-version: "3.12"
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,13 +112,85 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Build native Cryptography wheel
-        if: runner.os == 'Windows' && runner.arch == 'ARM64'
-        uses: ./.github/actions/build-arm-cryptography
-
       - name: Install packages
         run: pip install "./packages/markitdown[all]" ./packages/markitdown-mcp pytest
 
       - name: Run tests
+        working-directory: packages/markitdown-mcp
+        run: pytest
+
+  # Build one native wheel per workflow run. The three ARM test suites still
+  # run independently; non-ARM matrix cells do not need this job and are never
+  # held behind the expensive OpenSSL build.
+  arm-wheel:
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Build native Cryptography wheel
+        uses: ./.github/actions/build-arm-cryptography
+      - name: Record same-run wheel hash and version evidence
+        shell: pwsh
+        run: |
+          python .github/scripts/verify_arm_wheel.py --wheel-dir "$env:RUNNER_TEMP/cryptography-wheels" --constraints .github/constraints.txt --mode write
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: win-arm64-cryptography-wheel
+          path: ${{ runner.temp }}/cryptography-wheels/
+          if-no-files-found: error
+          retention-days: 1
+
+  # All 3 ARM suites consume one wheel from the SAME workflow run.
+  # Artifact failure, a missing member, a wrong architecture, or a manifest
+  # mismatch is a hard failure; no silent source build fallback is allowed.
+  arm-tests:
+    needs: arm-wheel
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, ocr, mcp]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: win-arm64-cryptography-wheel
+          path: ${{ runner.temp }}/cryptography-wheels
+      - name: Verify exact wheel bytes before package installation
+        shell: pwsh
+        run: |
+          python .github/scripts/verify_arm_wheel.py --wheel-dir "$env:RUNNER_TEMP/cryptography-wheels" --constraints .github/constraints.txt --mode verify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $wheelhouse = Join-Path $env:RUNNER_TEMP 'cryptography-wheels'
+          "PIP_FIND_LINKS=$wheelhouse" >> $env:GITHUB_ENV
+          "UV_FIND_LINKS=$wheelhouse" >> $env:GITHUB_ENV
+          "PIP_ONLY_BINARY=cryptography" >> $env:GITHUB_ENV
+      - name: Install Hatch
+        if: matrix.suite == 'core'
+        run: pipx install hatch
+      - name: Run core tests
+        if: matrix.suite == 'core'
+        working-directory: packages/markitdown
+        run: hatch test --python "3.12"
+      - name: Install OCR packages
+        if: matrix.suite == 'ocr'
+        run: pip install ./packages/markitdown ./packages/markitdown-ocr pytest
+      - name: Run OCR tests
+        if: matrix.suite == 'ocr'
+        working-directory: packages/markitdown-ocr
+        run: pytest
+      - name: Install MCP packages
+        if: matrix.suite == 'mcp'
+        run: pip install "./packages/markitdown[all]" ./packages/markitdown-mcp pytest
+      - name: Run MCP tests
+        if: matrix.suite == 'mcp'
         working-directory: packages/markitdown-mcp
         run: pytest
