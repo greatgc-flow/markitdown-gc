@@ -25,8 +25,8 @@ From source:
 
 ```bash
 git clone https://github.com/greatgc-flow/markitdown-gc.git
-cd markitdown
-pip install -e 'packages/markitdown[all]'
+cd markitdown-gc
+pip install -e packages/markitdown
 ```
 
 ## Usage
