@@ -36,12 +36,16 @@ class TestExactReleaseCI(unittest.TestCase):
             {"arm-wheel", "arm-tests (core)", "arm-tests (ocr)", "arm-tests (mcp)"}
             <= self.jobs
         )
-        self.assertFalse(
-            any("windows-11-vs2026-arm" in name for name in self.jobs)
+        self.assertFalse(any("windows-11-vs2026-arm" in name for name in self.jobs))
+        self.assertTrue(
+            any(name.startswith("tests (windows-latest,") for name in self.jobs)
         )
-        self.assertTrue(any(name.startswith("tests (windows-latest,") for name in self.jobs))
-        self.assertTrue(any(name.startswith("ocr-tests (ubuntu-latest,") for name in self.jobs))
-        self.assertTrue(any(name.startswith("mcp-tests (ubuntu-latest,") for name in self.jobs))
+        self.assertTrue(
+            any(name.startswith("ocr-tests (ubuntu-latest,") for name in self.jobs)
+        )
+        self.assertTrue(
+            any(name.startswith("mcp-tests (ubuntu-latest,") for name in self.jobs)
+        )
 
     def test_exact_successful_main_push_is_accepted(self) -> None:
         validate_run(self._run(), self._jobs(), "a" * 40, self.jobs)
