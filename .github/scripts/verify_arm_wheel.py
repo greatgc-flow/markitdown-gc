@@ -8,6 +8,7 @@ Usage: python .github/scripts/verify_arm_wheel.py --wheel-dir DIR --constraints 
        python .github/scripts/verify_arm_wheel.py --wheel-dir DIR --constraints .github/constraints.txt --mode verify
 Outputs machine-readable stdout JSON; returns 0 PASS or 2 HOLD.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,7 +56,9 @@ def _expected(constraints: Path) -> tuple[str, str]:
                 raise ValueError("cryptography pin must target Windows ARM64")
             matches.append(match.group(1))
     if len(matches) != 1:
-        raise ValueError("cryptography must have exactly one pinned Windows ARM64 version")
+        raise ValueError(
+            "cryptography must have exactly one pinned Windows ARM64 version"
+        )
     return matches[0], hashlib.sha256(raw).hexdigest()
 
 
@@ -75,7 +78,10 @@ def _inspect_wheel(wheel_dir: Path, constraints: Path) -> dict[str, Any]:
         raise ValueError("wheel size is outside configured safety bounds")
     with zipfile.ZipFile(wheel) as archive:
         entries = archive.infolist()
-        if len(entries) > 600 or sum(item.file_size for item in entries) > 96 * 1024 * 1024:
+        if (
+            len(entries) > 600
+            or sum(item.file_size for item in entries) > 96 * 1024 * 1024
+        ):
             raise ValueError("wheel expanded metadata exceeds safety budget")
         expected_metadata = f"cryptography-{version}.dist-info/WHEEL"
         if expected_metadata not in {item.filename for item in entries}:
@@ -129,7 +135,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = check(args.wheel_dir, args.constraints, args.mode)
-    except (OSError, ValueError, UnicodeError, zipfile.BadZipFile, json.JSONDecodeError) as exc:
+    except (
+        OSError,
+        ValueError,
+        UnicodeError,
+        zipfile.BadZipFile,
+        json.JSONDecodeError,
+    ) as exc:
         print(json.dumps({"status": "HOLD", "reason": str(exc)}, sort_keys=True))
         return 2
     print(json.dumps(result, sort_keys=True))
