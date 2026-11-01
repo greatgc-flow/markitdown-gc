@@ -74,11 +74,14 @@ def _inspect_wheel(wheel_dir: Path, constraints: Path) -> dict[str, Any]:
     if not 0 < size <= _MAX_WHEEL_BYTES:
         raise ValueError("wheel size is outside configured safety bounds")
     with zipfile.ZipFile(wheel) as archive:
+        entries = archive.infolist()
+        if len(entries) > 600 or sum(item.file_size for item in entries) > 96 * 1024 * 1024:
+            raise ValueError("wheel expanded metadata exceeds safety budget")
+        expected_metadata = f"cryptography-{version}.dist-info/WHEEL"
+        if expected_metadata not in {item.filename for item in entries}:
+            raise ValueError("wheel missing expected cryptography package metadata")
         if archive.testzip() is not None:
             raise ValueError("wheel ZIP member CRC validation failed")
-        names = archive.namelist()
-        if not any(n.endswith(".dist-info/WHEEL") for n in names):
-            raise ValueError("wheel missing standard package metadata")
     return {
         "schema": 1,
         "package": "cryptography",
