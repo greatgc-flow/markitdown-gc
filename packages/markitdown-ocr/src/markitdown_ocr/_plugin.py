@@ -37,13 +37,14 @@ def register_converters(markitdown: MarkItDown, **kwargs: Any) -> None:
     llm_model = kwargs.get("llm_model")
     llm_prompt = kwargs.get("llm_prompt")
 
-    ocr_service: LLMVisionOCRService | None = None
-    if llm_client and llm_model:
-        ocr_service = LLMVisionOCRService(
-            client=llm_client,
-            model=llm_model,
-            default_prompt=llm_prompt,
-        )
+    if not (llm_client and llm_model):
+        # Without OCR, keep the built-in converters and their metadata.
+        return
+    ocr_service = LLMVisionOCRService(
+        client=llm_client,
+        model=llm_model,
+        default_prompt=llm_prompt,
+    )
 
     # Register converters with priority -1.0 (before built-ins at 0.0)
     # This effectively "replaces" the built-in converters when plugin is installed
