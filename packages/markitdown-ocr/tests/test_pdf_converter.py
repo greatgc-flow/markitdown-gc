@@ -503,3 +503,106 @@ def test_pdf_textless_vector_pages_trigger_fallback(monkeypatch, with_ocr):
         assert fallback_calls == [True]
         assert not ocr_calls
         assert not result.markdown.strip()
+
+
+@pytest.mark.parametrize("path", ["embedded", "per_page", "full_pages", "pymupdf"])
+@pytest.mark.parametrize("outcome", ["error_empty", "error_text", "empty"])
+def test_pdf_missing_ocr_text_warns_and_sets_omission_flag(monkeypatch, path, outcome):
+    import warnings
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from PIL import Image
+    from markitdown_ocr import _pdf_converter_with_ocr as module
+
+    if path == "pymupdf":
+        pytest.importorskip("fitz", reason="PyMuPDF rendering is unavailable")
+    converter = PdfConverterWithOCR()
+    open_calls = 0
+    if path != "embedded":
+        blank_page = SimpleNamespace(
+            extract_text=lambda: "",
+            to_image=lambda **kwargs: SimpleNamespace(
+                original=Image.new("RGB", (20, 20))
+            ),
+        )
+        pages = [blank_page]
+        if path == "per_page":
+            pages.append(SimpleNamespace(extract_text=lambda: "Native text retained"))
+
+        def open_pdf(stream):
+            nonlocal open_calls
+            open_calls += 1
+            if path == "pymupdf" or (path == "full_pages" and open_calls == 1):
+                raise ValueError("pdfplumber failed")
+            return nullcontext(SimpleNamespace(pages=pages))
+
+        monkeypatch.setattr(module.pdfplumber, "open", open_pdf)
+        monkeypatch.setattr(
+            module.pdfminer.high_level, "extract_text", lambda stream: "\f"
+        )
+        monkeypatch.setattr(converter, "_extract_page_images", lambda *args: [])
+
+    class Service:
+        def extract_text(self, stream):
+            assert stream.tell() == 0
+            return OCRResult(
+                text="ignored" if outcome == "error_text" else " \n",
+                error="quota exceeded" if outcome.startswith("error") else None,
+            )
+
+    data = (TEST_DATA_DIR / "pdf_image_start.pdf").read_bytes()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = converter.convert(
+            io.BytesIO(data), StreamInfo(extension=".pdf"), ocr_service=Service()
+        )
+    runtime_warnings = [w for w in caught if issubclass(w.category, RuntimeWarning)]
+    if outcome.startswith("error"):
+        assert len(runtime_warnings) == 1
+        assert "PDF image OCR failed: quota exceeded" in str(
+            runtime_warnings[0].message
+        )
+    else:
+        assert not runtime_warnings
+    assert result.image_content_omitted is True
+    assert "ignored" not in result.markdown
+    assert "[Image OCR]" not in result.markdown
+    if path == "embedded":
+        assert "This is text BEFORE the image." in result.markdown
+    elif path == "per_page":
+        assert "Native text retained" in result.markdown
+
+    # Omission state belongs to this conversion, not the reused converter instance.
+    open_calls = 0
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        recovered = converter.convert(
+            io.BytesIO(data), StreamInfo(extension=".pdf"), ocr_service=MockOCRService()
+        )
+    assert not [w for w in caught if issubclass(w.category, RuntimeWarning)]
+    assert recovered.image_content_omitted is False
+    assert _OCR_BLOCK in recovered.markdown
+
+
+def test_pdf_reported_ocr_error_cannot_recover_failed_parsers(monkeypatch):
+    pytest.importorskip("fitz", reason="PyMuPDF rendering is unavailable")
+    from markitdown_ocr import _pdf_converter_with_ocr as module
+
+    def fail_primary(*args, **kwargs):
+        raise ValueError("pdfplumber failed")
+
+    def fail_fallback(stream):
+        raise RuntimeError("pdfminer failed")
+
+    class Service:
+        def extract_text(self, stream):
+            return OCRResult(text="ignored", error="quota exceeded")
+
+    monkeypatch.setattr(module.pdfplumber, "open", fail_primary)
+    monkeypatch.setattr(module.pdfminer.high_level, "extract_text", fail_fallback)
+    data = (TEST_DATA_DIR / "pdf_image_start.pdf").read_bytes()
+    with pytest.warns(RuntimeWarning, match="PDF image OCR failed: quota exceeded"):
+        with pytest.raises(RuntimeError, match="pdfminer failed"):
+            PdfConverterWithOCR(Service()).convert(
+                io.BytesIO(data), StreamInfo(extension=".pdf")
+            )
