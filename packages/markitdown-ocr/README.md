@@ -16,7 +16,7 @@ Uses the same `llm_client` / `llm_model` pattern that MarkItDown already support
 
 ## Installation
 
-Requires `markitdown-gc>=0.3.6`, which provides the Office image-rendering hooks used by this plugin. Installing the plugin automatically resolves a compatible core version.
+Requires `markitdown-gc>=0.3.5`, which provides the Office image-rendering hooks used by this plugin. Installing the plugin automatically resolves a compatible core version.
 
 The PyPI `markitdown-ocr` is the upstream Microsoft package and depends on upstream `markitdown`, which conflicts with `markitdown-gc`. This fork does not publish it; install from this repository in a fresh virtual environment:
 

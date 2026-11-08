@@ -57,6 +57,60 @@ def _convert(filename: str, ocr_service: MockOCRService) -> str:
         ).text_content
 
 
+@pytest.mark.parametrize("positioned_words", [False, True])
+def test_pdf_interleaving_preserves_native_word_spacing(positioned_words):
+    import pdfplumber
+
+    # TJ offsets separate words geometrically without storing space characters.
+    first = b"[(First) -1000 (Second)] TJ" if positioned_words else b"(First Second) Tj"
+    last = b"[(Third) -1000 (Fourth)] TJ" if positioned_words else b"(Third Fourth) Tj"
+    content = (
+        b"BT /F1 12 Tf 40 350 Td " + first + b" ET\n"
+        b"q 60 0 0 60 40 200 cm /Im1 Do Q\n"
+        b"BT /F1 12 Tf 40 100 Td " + last + b" ET\n"
+    )
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 400] "
+        b"/Resources << /Font << /F1 5 0 R >> /XObject << /Im1 6 0 R >> >> "
+        b"/Contents 4 0 R >>",
+        f"<< /Length {len(content)} >>\nstream\n".encode() + content + b"endstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\n"
+        b"stream\n\xff\x00\x00\nendstream",
+    ]
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for number, obj in enumerate(objects, 1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{number} 0 obj\n".encode() + obj + b"\nendobj\n")
+    xref = len(pdf)
+    pdf.extend(f"xref\n0 {len(offsets)}\n0000000000 65535 f \n".encode())
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode())
+    pdf.extend(
+        f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\n"
+        f"startxref\n{xref}\n%%EOF\n".encode()
+    )
+
+    with pdfplumber.open(io.BytesIO(pdf)) as document:
+        page = document.pages[0]
+        assert page.extract_text() == "First Second\nThird Fourth"
+        if positioned_words:
+            assert all(char["text"] != " " for char in page.chars)
+
+    converter = PdfConverterWithOCR(MockOCRService())
+    result = converter.convert(io.BytesIO(pdf), StreamInfo(extension=".pdf"))
+
+    assert "First Second" in result.markdown
+    assert "Third Fourth" in result.markdown
+    assert result.markdown.count(_OCR_BLOCK) == 1
+    assert result.markdown.index("First Second") < result.markdown.index(_OCR_BLOCK)
+    assert result.markdown.index(_OCR_BLOCK) < result.markdown.index("Third Fourth")
+
+
 # ---------------------------------------------------------------------------
 # pdf_image_start.pdf
 # ---------------------------------------------------------------------------
@@ -135,9 +189,9 @@ def test_pdf_complex_layout(svc: MockOCRService) -> None:
         "## Page 1\n\n\n"
         "Complex Layout Document\n\n"
         "Table:\n\n"
-        "ItemQuantity\n\n\n\n"
+        "Item Quantity\n\n\n\n"
         "*[Image OCR]\nMOCK_OCR_TEXT_12345\n[End OCR]*\n\n\n"
-        "Widget A5"
+        "Widget A 5"
     )
     assert _convert("pdf_complex_layout.pdf", svc) == expected
 
