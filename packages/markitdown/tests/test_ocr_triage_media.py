@@ -543,19 +543,10 @@ def test_hwpx_wmf_is_unsupported_issue():
     assert any(i["code"] == "unsupported_media" for i in report["issues"])
 
 
-def test_hwp5_parser_images_stable_and_not_decor(monkeypatch):
-    from types import SimpleNamespace
-    import hwp_hwpx_parser as parser
+def test_hwp5_parser_images_stable_and_not_decor():
+    from ._hwp5_builder import build_hwp5
 
-    reader = SimpleNamespace(
-        get_images=lambda: [
-            SimpleNamespace(filename="BIN0001.png", data=png(), format="png", index=0),
-            SimpleNamespace(filename="BIN0002.wmf", data=b"wmf", format="wmf", index=1),
-        ],
-        close=lambda: None,
-    )
-    monkeypatch.setattr(parser, "read", lambda path: reader)
-    data = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"synthetic HWP5"
+    data = build_hwp5(png())
     stream = io.BytesIO(data)
     stream.seek(3)
     report = core.triage(stream)
@@ -570,3 +561,74 @@ def test_hwp5_parser_images_stable_and_not_decor(monkeypatch):
     assert report["summary"]["image_occurrences"] == 2
     assert any(i["code"] == "unsupported_media" for i in report["issues"])
     assert core.triage(io.BytesIO(data)) == report
+
+
+def test_hwp5_decompression_is_bounded_before_parser_materialization(monkeypatch):
+    import zlib
+    from hwp_hwpx_parser import Reader
+    from ._hwp5_builder import build_hwp5
+
+    data = build_hwp5(png() + b"0" * (1024**2))
+    monkeypatch.setattr(core, "MAX_MEDIA_READ_BYTES", 8192)
+    outputs = []
+    materialized = []
+    original_decompress = zlib.decompress
+    original_object = zlib.decompressobj
+    original_images = Reader.get_images
+
+    def decompress(*args, **kwargs):
+        result = original_decompress(*args, **kwargs)
+        outputs.append(len(result))
+        return result
+
+    class Watched:
+        def __init__(self, *args, **kwargs):
+            self.inner = original_object(*args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+        def decompress(self, data, max_length=0):
+            result = self.inner.decompress(data, max_length)
+            outputs.append(len(result))
+            return result
+
+    def get_images(self):
+        materialized.append(True)
+        return original_images(self)
+
+    monkeypatch.setattr(zlib, "decompress", decompress)
+    monkeypatch.setattr(zlib, "decompressobj", Watched)
+    monkeypatch.setattr(Reader, "get_images", get_images)
+    report = core.triage(io.BytesIO(data))
+
+    assert report["coverage"]["state"] == "partial"
+    assert [issue["code"] for issue in report["issues"]] == ["zip_limit"]
+    assert sum(outputs) <= 8193
+    assert not materialized
+
+
+@pytest.mark.parametrize("limit", ["bytes", "references"])
+def test_hwp5_budget_stops_before_opening_next_stream(monkeypatch, limit):
+    import olefile
+    from ._hwp5_builder import build_hwp5
+
+    if limit == "bytes":
+        monkeypatch.setattr(core, "MAX_MEDIA_READ_BYTES", 8192 + len(png()) - 1)
+    else:
+        monkeypatch.setattr(core, "MAX_MEDIA_REFERENCES", 1)
+    original = olefile.OleFileIO.openstream
+    opened = []
+
+    def openstream(self, path):
+        if path[0] == "BinData":
+            opened.append(path[-1])
+        return original(self, path)
+
+    monkeypatch.setattr(olefile.OleFileIO, "openstream", openstream)
+    report = core.triage(io.BytesIO(build_hwp5(png())))
+
+    assert opened == ["BIN0001.png"]
+    assert report["coverage"]["state"] == "partial"
+    assert [row["id"] for row in report["media"]] == ["BinData/BIN0001.png"]
+    assert [issue["code"] for issue in report["issues"]] == ["zip_limit"]

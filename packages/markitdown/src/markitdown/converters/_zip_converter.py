@@ -96,6 +96,7 @@ class ZipConverter(DocumentConverter):
             else stream_info.local_path or stream_info.filename or "(unknown)"
         )
         md_content = f"Content from the zip file `{file_path}`:\n\n"
+        image_content_omitted = False
 
         # Drop the metadata describing the outer *archive*
         member_kwargs = {
@@ -119,6 +120,7 @@ class ZipConverter(DocumentConverter):
                         **member_kwargs,
                     )
                     if result is not None:
+                        image_content_omitted |= result.image_content_omitted
                         md_content += f"## File: {name}\n\n"
                         md_content += result.markdown + "\n\n"
                 except UnsupportedFormatException:
@@ -126,4 +128,7 @@ class ZipConverter(DocumentConverter):
                 except FileConversionException:
                     pass
 
-        return DocumentConverterResult(markdown=md_content.strip())
+        return DocumentConverterResult(
+            markdown=md_content.strip(),
+            image_content_omitted=image_content_omitted,
+        )

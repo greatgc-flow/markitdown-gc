@@ -1,10 +1,12 @@
 """Borrow the HWP parser with guaranteed temporary-file cleanup."""
 
+import hashlib
 import io
 import os
 import re
 import tempfile
 import zipfile
+import zlib
 from contextlib import contextmanager
 
 from ._media import save_media, validate_members
@@ -27,8 +29,63 @@ def hwp_reader(data, suffix):
         os.unlink(temporary.name)
 
 
-def hwp_images(data, suffix, reader):
+class HwpMediaLimit(ValueError):
+    """HWP5 media inspection exhausted its byte or reference budget."""
+
+
+def _iter_hwp5_images(data, max_bytes, max_images, stored):
+    """Inspect one OLE stream at a time, bounding stored and inflated bytes."""
+    import olefile
+    from hwp_hwpx_parser.models import detect_image_format
+
+    remaining = max_bytes
+    with olefile.OleFileIO(io.BytesIO(data)) as ole:
+        paths = (
+            path
+            for path in sorted(ole.listdir())
+            if len(path) == 2 and path[0] == "BinData"
+        )
+        for index, path in enumerate(paths):
+            if max_images is not None and index >= max_images:
+                raise HwpMediaLimit()
+            # olefile.openstream itself materializes the stored stream.
+            size = ole.get_size(path)
+            if size > remaining:
+                raise HwpMediaLimit()
+            with ole.openstream(path) as stream:
+                raw = stream.read(size)
+            remaining -= len(raw)
+            payload = raw
+            try:
+                inflater = zlib.decompressobj(-15)
+                decoded = inflater.decompress(raw, remaining + 1)
+                if len(decoded) > remaining:
+                    raise HwpMediaLimit()
+                remaining -= len(decoded)
+                # Match the parser's fallback for incomplete/non-deflate streams.
+                if inflater.eof:
+                    payload = decoded
+            except zlib.error:
+                pass
+            ext = detect_image_format(payload)
+            supported = ext != "unknown"
+            if not supported:
+                payload = raw
+                ext = path[-1].rsplit(".", 1)[-1].lower()
+            name = "/".join(path)
+            stored[name] = (len(raw), hashlib.sha256(raw).hexdigest())
+            yield name, payload, ext, supported
+
+
+def hwp_images(data, suffix, reader, *, max_bytes=None, max_images=None, stored=None):
     """Return image payloads with stable member/stream identities, including omissions."""
+    if suffix == ".hwp" and max_bytes is not None:
+        # Bounded callers must never invoke the parser's eager get_images().
+        if reader.is_encrypted:
+            raise ValueError("Encrypted HWP5 is not inspected")
+        return _iter_hwp5_images(
+            data, max_bytes, max_images, stored if stored is not None else {}
+        )
     images = reader.get_images()
     if suffix == ".hwpx":
         with zipfile.ZipFile(io.BytesIO(data)) as archive:

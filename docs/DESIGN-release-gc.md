@@ -1,4 +1,4 @@
-# Release E: markitdown-gc 0.2.0
+# Release decisions (recorded at 0.2.0; current version and recipe: [STATUS.md](STATUS.md))
 
 ## Decisions
 - Publish only the core distribution as `markitdown-gc`, an unofficial fork.
@@ -9,8 +9,8 @@
 - Version comes from `src/markitdown/__about__.py`: `0.2.0`.
 - Use fork project URLs and fork distribution names in docs and install hints.
 - Keep local directory requirements, Dockerfiles and CI paths unchanged.
-- Sibling OCR/MCP/sample-plugin packages are not published for the fork yet;
-  keep their identities and withhold fork installation instructions.
+- Sibling OCR/MCP/sample-plugin packages are not published for the fork; they depend
+  on `markitdown-gc` (since 0.3.6) and are installed from this repository.
 
 ## Steps
 1. Add a failing regression for upstream distribution names in install guidance.

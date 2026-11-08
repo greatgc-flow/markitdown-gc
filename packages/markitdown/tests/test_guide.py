@@ -171,6 +171,27 @@ def test_media_recipe_extracts_by_member_id(tmp_path):
     assert target.read_bytes() == image.read_bytes()
 
 
+def test_media_hwp5_recipe_extracts_parser_payload(tmp_path):
+    import io
+    from markitdown.ocr_triage import triage
+    from ._hwp5_builder import build_hwp5
+    from .test_extract_media import png
+
+    source = tmp_path / "synthetic.hwp"
+    source.write_bytes(build_hwp5(png()))
+    member_id = triage(io.BytesIO(source.read_bytes()))["media"][0]["id"]
+    target = tmp_path / "extracted.png"
+    exec(
+        _recipe("media-hwp5"),
+        {
+            "source_path": str(source),
+            "member_id": member_id,
+            "output_path": str(target),
+        },
+    )
+    assert target.read_bytes() == png()
+
+
 def test_guide_has_no_persistent_ocr_cache() -> None:
     assert ".ocr-cache" not in _packaged()
 

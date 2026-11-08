@@ -271,6 +271,23 @@ def test_pdf_failures(core, monkeypatch, failure):
         assert "pip install" in report["issues"][0]["detail"]
 
 
+def test_permission_only_encryption_is_inspected(core, monkeypatch):
+    # PDFs encrypted for permissions only open with the empty user password
+    # (#59): they must be inspected like any other PDF, not reported unknown.
+    real_open = pdfplumber.open
+
+    def open_marked_encrypted(*args, **kwargs):
+        document = real_open(*args, **kwargs)
+        document.doc.encryption = (b"id", {"Filter": "Standard"})
+        return document
+
+    monkeypatch.setattr(pdfplumber, "open", open_marked_encrypted)
+    report = inspect(core, pdf([{}]))
+    assert report["decision"] != "unknown"
+    assert report["coverage"]["state"] == "complete"
+    assert all(issue["code"] != "encrypted" for issue in report["issues"])
+
+
 @pytest.mark.parametrize("missing", [False, True])
 def test_image_probe_failure_keeps_candidate(core, monkeypatch, missing):
     data = raster()
