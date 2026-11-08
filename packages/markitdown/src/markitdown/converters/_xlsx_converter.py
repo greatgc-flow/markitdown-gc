@@ -261,6 +261,55 @@ class XlsxConverter(DocumentConverter):
         return None
 
 
+def _read_xls_sheets(file_stream: BinaryIO) -> dict[str, Any]:
+    """Tolerate damaged UTF-16 only while xlrd eagerly loads the workbook."""
+    originals = {
+        module: module.unicode
+        for name, module in list(sys.modules.items())
+        if (name == "xlrd" or name.startswith("xlrd.")) and hasattr(module, "unicode")
+    }
+    replaced = 0
+
+    def tolerant_unicode(data: bytes, encoding: str) -> str:
+        nonlocal replaced
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError as exc:
+            if not exc.encoding.replace("-", "_").startswith("utf_16"):
+                raise
+            text = data.decode(encoding, errors="replace")
+            # Exclude literal U+FFFD characters already present in the input.
+            replaced += text.count("\ufffd") - data.decode(
+                encoding, errors="ignore"
+            ).count("\ufffd")
+            return text
+
+    original_open = xlrd.open_workbook
+
+    def open_workbook(*args: Any, **kwargs: Any) -> Any:
+        try:
+            for module in originals:
+                module.unicode = tolerant_unicode
+            kwargs["on_demand"] = False
+            return original_open(*args, **kwargs)
+        finally:
+            for module, original in originals.items():
+                module.unicode = original
+
+    try:
+        xlrd.open_workbook = open_workbook
+        sheets = pd.read_excel(file_stream, sheet_name=None, engine="xlrd")
+    finally:
+        xlrd.open_workbook = original_open
+    if replaced:
+        warnings.warn(
+            f"Replaced {replaced} invalid UTF-16 sequence(s) in XLS strings with U+FFFD. Verify output.",
+            UserWarning,
+            stacklevel=2,
+        )
+    return sheets
+
+
 class XlsConverter(DocumentConverter):
     """
     Converts XLS files to Markdown, with each sheet presented as a separate Markdown table.
@@ -348,7 +397,7 @@ class XlsConverter(DocumentConverter):
                 _xls_dependency_exc_info[2]
             )
 
-        sheets = pd.read_excel(file_stream, sheet_name=None, engine="xlrd")
+        sheets = _read_xls_sheets(file_stream)
         md_content = ""
         for s in sheets:
             md_content += f"## {s}\n"
