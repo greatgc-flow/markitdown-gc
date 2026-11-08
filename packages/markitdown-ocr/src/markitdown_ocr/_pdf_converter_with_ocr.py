@@ -286,6 +286,21 @@ class PdfConverterWithOCR(DocumentConverter):
                         if text_content.strip():
                             page_content.append(text_content.strip())
 
+                    if ocr_service and not any(
+                        content.strip() for content in page_content
+                    ):
+                        try:
+                            text = self._ocr_page(page, ocr_service)
+                            page_content.append(
+                                f"*[Image OCR]\n{text}\n[End OCR]*"
+                                if text
+                                else "*[No text could be extracted from this page]*"
+                            )
+                        except Exception as exc:
+                            page_content.append(
+                                f"*[Error processing page {page_num}: {str(exc)}]*"
+                            )
+
                     if any(content.strip() for content in page_content):
                         markdown_content.append(f"\n## Page {page_num}\n")
                         markdown_content.extend(page_content)
@@ -294,14 +309,25 @@ class PdfConverterWithOCR(DocumentConverter):
                 markdown = "\n\n".join(markdown_content).strip()
 
         except Exception:
-            # Fallback to pdfminer
-            pdf_bytes.seek(0)
-            markdown = pdfminer.high_level.extract_text(pdf_bytes)
-        else:
-            # Headings alone must not prevent text or full-page OCR fallback.
-            if not markdown:
+            markdown = ""
+
+        if not markdown:
+            try:
                 pdf_bytes.seek(0)
                 markdown = pdfminer.high_level.extract_text(pdf_bytes)
+            except Exception:
+                recovered = ""
+                if ocr_service:
+                    try:
+                        pdf_bytes.seek(0)
+                        recovered = self._ocr_full_pages(
+                            pdf_bytes, ocr_service, require_text=True
+                        )
+                    except Exception:
+                        pass
+                if not recovered.strip():
+                    raise
+                markdown = recovered
 
         # Final fallback: If still empty/whitespace and OCR is available,
         # treat as scanned PDF and OCR full pages
@@ -338,8 +364,20 @@ class PdfConverterWithOCR(DocumentConverter):
 
         return images
 
+    def _ocr_page(self, page: Any, ocr_service: LLMVisionOCRService) -> str:
+        """Render one pdfplumber page and return its recognized text."""
+        page_img = page.to_image(resolution=300)
+        img_stream = io.BytesIO()
+        page_img.original.save(img_stream, format="PNG")
+        img_stream.seek(0)
+        return ocr_service.extract_text(img_stream).text.strip()
+
     def _ocr_full_pages(
-        self, pdf_bytes: io.BytesIO, ocr_service: LLMVisionOCRService
+        self,
+        pdf_bytes: io.BytesIO,
+        ocr_service: LLMVisionOCRService,
+        *,
+        require_text: bool = False,
     ) -> str:
         """
         Fallback for scanned PDFs: Convert entire pages to images and OCR them.
@@ -348,11 +386,13 @@ class PdfConverterWithOCR(DocumentConverter):
         Args:
             pdf_bytes: PDF file as BytesIO
             ocr_service: OCR service to use
+            require_text: Return empty if OCR cannot recover any text.
 
         Returns:
             Markdown text extracted from OCR of full pages
         """
         markdown_parts = []
+        has_text = False
 
         try:
             pdf_bytes.seek(0)
@@ -361,17 +401,9 @@ class PdfConverterWithOCR(DocumentConverter):
                     try:
                         markdown_parts.append(f"\n## Page {page_num}\n")
 
-                        # Render page to image
-                        page_img = page.to_image(resolution=300)
-                        img_stream = io.BytesIO()
-                        page_img.original.save(img_stream, format="PNG")
-                        img_stream.seek(0)
-
-                        # Run OCR
-                        ocr_result = ocr_service.extract_text(img_stream)
-
-                        if ocr_result.text.strip():
-                            text = ocr_result.text.strip()
+                        text = self._ocr_page(page, ocr_service)
+                        if text:
+                            has_text = True
                             markdown_parts.append(f"*[Image OCR]\n{text}\n[End OCR]*")
                         else:
                             markdown_parts.append(
@@ -387,6 +419,7 @@ class PdfConverterWithOCR(DocumentConverter):
         except Exception:
             # pdfplumber failed (e.g. malformed EOF) — try PyMuPDF for rendering
             markdown_parts = []
+            has_text = False
             try:
                 import fitz  # PyMuPDF
 
@@ -404,6 +437,7 @@ class PdfConverterWithOCR(DocumentConverter):
                         ocr_result = ocr_service.extract_text(img_stream)
 
                         if ocr_result.text.strip():
+                            has_text = True
                             text = ocr_result.text.strip()
                             markdown_parts.append(f"*[Image OCR]\n{text}\n[End OCR]*")
                         else:
@@ -418,6 +452,10 @@ class PdfConverterWithOCR(DocumentConverter):
                         continue
                 doc.close()
             except Exception:
-                return "*[Error: Could not process scanned PDF]*"
+                return (
+                    "" if require_text else "*[Error: Could not process scanned PDF]*"
+                )
 
+        if require_text and not has_text:
+            return ""
         return "\n\n".join(markdown_parts).strip()
