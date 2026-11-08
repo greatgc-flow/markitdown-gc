@@ -102,24 +102,18 @@ cat path-to-file.pdf | markitdown-gc
 ```
 
 ### Optional Dependencies
-MarkItDown has optional dependencies for activating various file formats. The `[all]` option includes these, including HWP/HWPX. You can also install them individually for more control. For example:
+Document converters for PDF, DOCX, PPTX, XLSX/XLS, HWP/HWPX, and Outlook are installed by default. Optional dependencies activate additional features, including audio transcription, YouTube transcription, and Azure document services. The `[all]` extra includes these optional features. You can also install extras individually. For example:
 
 ```bash
-pip install 'markitdown-gc[pdf, docx, pptx]'
+pip install 'markitdown-gc[audio-transcription]'
 ```
 
-will install only the dependencies for PDF, DOCX, and PPTX files.
+This adds audio transcription support to the default installation.
 
 At the moment, the following optional dependencies are available:
 
 * `[all]` Installs all optional dependencies
-* `[hwp]` Installs dependencies for HWP5 and HWPX files
-* `[pptx]` Installs dependencies for PowerPoint files
-* `[docx]` Installs dependencies for Word files
-* `[xlsx]` Installs dependencies for Excel files
-* `[xls]` Installs dependencies for older Excel files
-* `[pdf]` Installs dependencies for PDF files
-* `[outlook]` Installs dependencies for Outlook messages
+* `[hwp]`, `[pptx]`, `[docx]`, `[xlsx]`, `[xls]`, `[pdf]`, `[outlook]` are compatibility aliases for converters included by default
 * `[az-doc-intel]` Installs dependencies for Azure Document Intelligence
 * `[az-content-understanding]` Installs dependencies for Azure Content Understanding
 * `[audio-transcription]` Installs dependencies for audio transcription of wav and mp3 files
