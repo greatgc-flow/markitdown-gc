@@ -23,7 +23,7 @@
 - List sdist/wheel contents; require GUIDE.md, LICENSE, ThirdPartyNotices.md,
   the complete markitdown package and version 0.2.0 with fork metadata/URLs.
 - Fresh external Python 3.12 and 3.15 venvs: install the local wheel `[all]`.
-- `pip check`; `markitdown --version`, `--guide`, `--guide install` succeed.
+- `pip check`; `markitdown-gc --version`, `--guide`, `--guide install` succeed.
 - `importlib.metadata.version("markitdown-gc") == "0.2.0"`; upstream absent.
 - Convert synthetic HWPX from tests/_hwpx_builder.py build_hwpx(); assert text.
 - Full core pytest suite with `GITHUB_ACTIONS=true` (offline gates), then Black.

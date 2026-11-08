@@ -95,7 +95,7 @@ Resume-ledger rationale: sha256 costs about 0.2 ms versus 35-170 ms per page ren
 Peers are cc/cx; ag participates only when it has quota and attests its own vision capability. Cost pacing: one reused stream per role; the owner approves bulk OCR.
 
 ## Usability layer (users and AI agents, minimal effort and tokens) - ships with Phase 1
-1. Layered guide from the one packaged `GUIDE.md` (`## topic` sections): `markitdown --guide` = quick card (<= 2000 chars); `--guide TOPIC` = that section only
+1. Layered guide from the one packaged `GUIDE.md` (`## topic` sections): `markitdown-gc --guide` = quick card (<= 2000 chars); `--guide TOPIC` = that section only
    (topics: formats, ocr, errors, install; each <= 3500 chars); `--guide all` = everything (<= 12000 chars). `nargs='?'`, `const` = quick; guide mode is exclusive with
    conversion/report arguments; unknown topic lists the topics and exits 2. Budgets are ceilings counted in characters (approx 4 chars/token; Korean costs more).
 2. `--help` epilog: one line "AI agents / quick start: markitdown --guide". README: 5-line Quick start for humans + the same pointer.
@@ -113,11 +113,11 @@ Peers are cc/cx; ag participates only when it has quota and attests its own visi
 Quick card (<= 20 lines, drafted by cc+cx):
 ```
 MarkItDown: convert files to Markdown (stdout). Inspect output before trusting it.
-  markitdown FILE                 convert        markitdown FILE -o out.md   write file
+  markitdown-gc FILE              convert        markitdown-gc FILE -o out.md   write file
   cat FILE | markitdown -x .pdf   stdin (-x = extension hint)
-  markitdown FILE --ocr-report -o r.json   triage: which pages/images need OCR
+  markitdown-gc FILE --ocr-report -o r.json   triage: which pages/images need OCR
   jq '{decision,coverage,summary,candidates,issues}' r.json   (no jq? --guide ocr has a python -c one-liner)
-  markitdown --guide TOPIC        topics: formats ocr errors install | all
+  markitdown-gc --guide TOPIC        topics: formats ocr errors install | all
   pip install "markitdown[all]"   (or [pdf] [docx] [hwp] ...)
 Traps:
   1 Scanned PDF/image => EMPTY output, no error => run --ocr-report.
