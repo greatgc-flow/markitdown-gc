@@ -8,4 +8,4 @@ On `main`, tag the version as `vX.Y.Z`. The [`release.yml`](../.github/workflows
 
 ## Follow-ups
 
-- The release workflow does not gate publishing on [`tests.yml`](../.github/workflows/tests.yml); this is tracked as an issue to file.
+- The release workflow does not gate publishing on [`tests.yml`](../.github/workflows/tests.yml); tracked in [#57](https://github.com/greatgc-flow/markitdown-gc/issues/57).
