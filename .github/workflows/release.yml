@@ -8,7 +8,25 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  gate:
+    # Publish only commits whose tests workflow already succeeded (#57).
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Require a successful tests run for the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          ok=$(gh run list --workflow tests.yml --commit "$SHA" --status success --json databaseId --jq length)
+          if [ "$ok" -lt 1 ]; then
+            echo "::error::No successful tests.yml run for $SHA; rerun failed jobs or dispatch tests first."
+            exit 1
+          fi
   build:
+    needs: gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

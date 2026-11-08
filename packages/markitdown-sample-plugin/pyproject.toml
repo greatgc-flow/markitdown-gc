@@ -24,14 +24,14 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "markitdown>=0.1.0a1",
+  "markitdown-gc>=0.3.6",
   "striprtf",
 ]
 
 [project.urls]
-Documentation = "https://github.com/microsoft/markitdown#readme"
-Issues = "https://github.com/microsoft/markitdown/issues"
-Source = "https://github.com/microsoft/markitdown"
+Documentation = "https://github.com/greatgc-flow/markitdown-gc#readme"
+Issues = "https://github.com/greatgc-flow/markitdown-gc/issues"
+Source = "https://github.com/greatgc-flow/markitdown-gc"
 
 [tool.hatch.version]
 path = "src/markitdown_sample_plugin/__about__.py"

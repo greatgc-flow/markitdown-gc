@@ -398,9 +398,8 @@ def _pdf(report, stream, samples):
         from pdfminer.pdfdocument import PDFPasswordIncorrect
 
         with pdfplumber.open(stream) as document:
-            if document.doc.encryption:
-                _issue(report, "encrypted", "Encrypted PDF is not inspected.")
-                return False
+            # Opening succeeded, so any encryption uses the empty user password
+            # (permission-only); a real password raises PDFPasswordIncorrect.
             total = len(document.pages)
             report["coverage"]["pages_total"] = total
             if total > MAX_PAGES:
@@ -896,15 +895,28 @@ def _package_media(report, package, fmt):
 
 
 def _hwp(report, stream):
-    from ._hwp_media import hwp_reader, hwp_images
+    from ._hwp_media import HwpMediaLimit, hwp_reader, hwp_images
 
     report["summary"]["media_small"] = 0
     report["media"] = []
     stream.seek(0)
     data = stream.read(MAX_BYTES + 1)
+    rows = []
+    stored = {}
+    limited = False
     try:
         with hwp_reader(data, ".hwp") as reader:
-            rows = hwp_images(data, ".hwp", reader)
+            for row in hwp_images(
+                data,
+                ".hwp",
+                reader,
+                max_bytes=MAX_MEDIA_READ_BYTES,
+                max_images=MAX_MEDIA_REFERENCES,
+                stored=stored,
+            ):
+                rows.append(row)
+    except HwpMediaLimit:
+        limited = True
     except ImportError:
         _issue(
             report,
@@ -915,26 +927,10 @@ def _hwp(report, stream):
     except Exception:
         _issue(report, "corrupt", "HWP5 media could not be inspected.")
         return
-    stored = {}
-    try:
-        import olefile
-
-        with olefile.OleFileIO(io.BytesIO(data)) as ole:
-            for path in ole.listdir():
-                if len(path) == 2 and path[0] == "BinData":
-                    payload = ole.openstream(path).read()
-                    stored["/".join(path)] = (
-                        len(payload),
-                        hashlib.sha256(payload).hexdigest(),
-                    )
-    except (OSError, ValueError):
-        pass
     report["coverage"]["state"] = "complete"
-    spent = 0
-    for name, payload, ext, supported in rows[:MAX_MEDIA_REFERENCES]:
-        spent += len(payload)
+    for name, payload, ext, supported in rows:
         px = None
-        if spent <= MAX_MEDIA_READ_BYTES and supported:
+        if supported:
             try:
                 from PIL import Image
 
@@ -972,6 +968,6 @@ def _hwp(report, stream):
         else:
             _candidate(report, name, "image", None, "low", ["embedded_image"])
             report["candidates"][-1]["decor"] = False
-    if len(rows) > MAX_MEDIA_REFERENCES or spent > MAX_MEDIA_READ_BYTES:
+    if limited:
         report["coverage"]["state"] = "partial"
         _issue(report, "zip_limit", "HWP5 media observation limit reached.")

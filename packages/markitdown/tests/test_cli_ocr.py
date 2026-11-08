@@ -171,6 +171,23 @@ def test_document_text_cannot_trigger_hint(tmp_path):
     assert b"hint:" not in result.stderr
 
 
+def test_zip_docx_preserves_image_omission_hint(tmp_path):
+    import zipfile
+    from .test_extract_media import source
+
+    path = tmp_path / "images.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("images.docx", source("docx"))
+        archive.writestr("last.txt", "Plain text")
+
+    result = _run(str(path))
+
+    assert result.returncode == 0, result.stderr
+    assert b"## File: images.docx" in result.stdout
+    assert result.stderr.count(b"hint: image content omitted or truncated;") == 1
+    assert b"hint:" not in result.stdout
+
+
 def test_report_output_failure_and_extract_exclusivity(tmp_path):
     result = _run(
         "--ocr-report", "-o", str(tmp_path / "missing" / "r.json"), stdin=b"unknown"

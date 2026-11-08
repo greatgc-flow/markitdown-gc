@@ -16,10 +16,12 @@ Uses the same `llm_client` / `llm_model` pattern that MarkItDown already support
 
 ## Installation
 
-Requires `markitdown>=0.1.8,<0.2.0`, which provides the Office image-rendering hooks used by this plugin. Installing the plugin automatically resolves a compatible core version.
+Requires `markitdown-gc>=0.3.6`, which provides the Office image-rendering hooks used by this plugin. Installing the plugin automatically resolves a compatible core version.
+
+The PyPI `markitdown-ocr` is the upstream Microsoft package and depends on upstream `markitdown`, which conflicts with `markitdown-gc`. This fork does not publish it; install from this repository in a fresh virtual environment:
 
 ```bash
-pip install markitdown-ocr
+pip install markitdown-gc "git+https://github.com/greatgc-flow/markitdown-gc#subdirectory=packages/markitdown-ocr"
 ```
 
 The plugin uses whatever OpenAI-compatible client you already have. Install one if you don't have it yet:
@@ -30,13 +32,9 @@ pip install openai
 
 ## Usage
 
-### Command Line
-
-```bash
-markitdown-gc document.pdf --use-plugins --llm-client openai --llm-model gpt-4o
-```
-
 ### Python API
+
+The command line has no `--llm-client`/`--llm-model` options; use the Python API.
 
 Pass `llm_client` and `llm_model` to `MarkItDown()` exactly as you would for image descriptions:
 
@@ -191,14 +189,14 @@ pytest tests/ -v
 ### Building from Source
 
 ```bash
-git clone https://github.com/microsoft/markitdown.git
-cd markitdown
+git clone https://github.com/greatgc-flow/markitdown-gc.git
+cd markitdown-gc
 pip install -e 'packages/markitdown[docx,pptx,xlsx]' -e packages/markitdown-ocr
 ```
 
 ## Contributing
 
-Contributions are welcome! See the [MarkItDown repository](https://github.com/microsoft/markitdown) for guidelines.
+Contributions are welcome! See the [markitdown-gc repository](https://github.com/greatgc-flow/markitdown-gc) for guidelines.
 
 ## License
 

@@ -67,7 +67,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        # 3.15 skipped: sibling packages pin upstream markitdown<0.2.0 (no 3.15 wheel)
+        # 3.15 skipped: not yet validated for the sibling package dependencies
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         include:
           - os: windows-latest
@@ -101,7 +101,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        # 3.15 skipped: sibling packages pin upstream markitdown<0.2.0 (no 3.15 wheel)
+        # 3.15 skipped: not yet validated for the sibling package dependencies
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         include:
           - os: windows-latest

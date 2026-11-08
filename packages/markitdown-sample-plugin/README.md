@@ -17,11 +17,6 @@ from markitdown import MarkItDown, DocumentConverter, DocumentConverterResult, S
 
 class RtfConverter(DocumentConverter):
 
-    def __init__(
-        self, priority: float = PRIORITY_SPECIFIC_FILE_FORMAT
-    ):
-        super().__init__(priority=priority)
-
     def accepts(
         self,
         file_stream: BinaryIO,
@@ -60,7 +55,7 @@ def register_converters(markitdown: MarkItDown, **kwargs):
     """
 
     # Simply create and attach an RtfConverter instance
-    markitdown.register_converter(RtfConverter())
+    markitdown.register_converter(RtfConverter(), priority=PRIORITY_SPECIFIC_FILE_FORMAT)
 ```
 
 

@@ -8,8 +8,13 @@ runs:
       run: |
         $ErrorActionPreference = 'Stop'
         $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
-        & "$vcpkgRoot/vcpkg.exe" install openssl:arm64-windows-static-md
-        if ($LASTEXITCODE -ne 0) { throw 'OpenSSL build failed' }
+        # vcpkg downloads (e.g. Strawberry Perl) intermittently fail with HTTP 5xx.
+        foreach ($attempt in 1..3) {
+          & "$vcpkgRoot/vcpkg.exe" install openssl:arm64-windows-static-md
+          if ($LASTEXITCODE -eq 0) { break }
+          if ($attempt -eq 3) { throw 'OpenSSL build failed' }
+          Start-Sleep -Seconds (30 * $attempt)
+        }
 
         $env:OPENSSL_DIR = "$vcpkgRoot/installed/arm64-windows-static-md"
         $env:OPENSSL_STATIC = '1'

@@ -186,7 +186,7 @@ class PdfConverterWithOCR(DocumentConverter):
         try:
             with pdfplumber.open(pdf_bytes) as pdf:
                 for page_num, page in enumerate(pdf.pages, 1):
-                    markdown_content.append(f"\n## Page {page_num}\n")
+                    page_content = []
 
                     # If OCR is enabled, interleave text and images by position
                     if ocr_service:
@@ -268,39 +268,40 @@ class PdfConverterWithOCR(DocumentConverter):
                             # Build markdown by interleaving text and images
                             for item in content_items:
                                 if item["type"] == "text":
-                                    markdown_content.append(item["text"])
+                                    page_content.append(item["text"])
                                 else:  # image
                                     ocr_text = item["ocr_text"]
                                     img_marker = (
                                         f"\n\n*[Image OCR]\n{ocr_text}\n[End OCR]*\n"
                                     )
-                                    markdown_content.append(img_marker)
+                                    page_content.append(img_marker)
                         else:
                             # No images detected - just extract regular text
                             text_content = page.extract_text() or ""
                             if text_content.strip():
-                                markdown_content.append(text_content.strip())
+                                page_content.append(text_content.strip())
                     else:
                         # No OCR, just extract text
                         text_content = page.extract_text() or ""
                         if text_content.strip():
-                            markdown_content.append(text_content.strip())
+                            page_content.append(text_content.strip())
+
+                    if any(content.strip() for content in page_content):
+                        markdown_content.append(f"\n## Page {page_num}\n")
+                        markdown_content.extend(page_content)
 
                 # Build final markdown
                 markdown = "\n\n".join(markdown_content).strip()
 
-                # Fallback to pdfminer if empty
-                if not markdown:
-                    pdf_bytes.seek(0)
-                    markdown = pdfminer.high_level.extract_text(pdf_bytes)
-
         except Exception:
             # Fallback to pdfminer
-            try:
+            pdf_bytes.seek(0)
+            markdown = pdfminer.high_level.extract_text(pdf_bytes)
+        else:
+            # Headings alone must not prevent text or full-page OCR fallback.
+            if not markdown:
                 pdf_bytes.seek(0)
                 markdown = pdfminer.high_level.extract_text(pdf_bytes)
-            except Exception:
-                markdown = ""
 
         # Final fallback: If still empty/whitespace and OCR is available,
         # treat as scanned PDF and OCR full pages

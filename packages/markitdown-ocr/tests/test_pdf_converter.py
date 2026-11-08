@@ -246,3 +246,60 @@ def test_pdf_no_ocr_service_no_tags() -> None:
         md = converter.convert(f, StreamInfo(extension=".pdf")).text_content
     assert "*[Image OCR]" not in md
     assert "[End OCR]*" not in md
+
+
+@pytest.mark.parametrize("with_ocr", [False, True])
+def test_pdf_both_parser_failures_propagate(monkeypatch, with_ocr):
+    from markitdown_ocr import _pdf_converter_with_ocr as module
+
+    def fail_primary(*args, **kwargs):
+        raise ValueError("pdfplumber failed")
+
+    def fail_fallback(stream):
+        assert stream.tell() == 0
+        raise RuntimeError("pdfminer failed")
+
+    monkeypatch.setattr(module.pdfplumber, "open", fail_primary)
+    monkeypatch.setattr(module.pdfminer.high_level, "extract_text", fail_fallback)
+    converter = PdfConverterWithOCR(MockOCRService() if with_ocr else None)
+    with pytest.raises(RuntimeError, match="pdfminer failed"):
+        converter.convert(io.BytesIO(b"broken PDF"), StreamInfo(extension=".pdf"))
+
+
+@pytest.mark.parametrize("with_ocr", [False, True])
+def test_pdf_textless_vector_pages_trigger_fallback(monkeypatch, with_ocr):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from markitdown_ocr import _pdf_converter_with_ocr as module
+
+    pages = [SimpleNamespace(extract_text=lambda: " \n\t", chars=[]) for _ in range(2)]
+    monkeypatch.setattr(
+        module.pdfplumber, "open", lambda stream: nullcontext(SimpleNamespace(pages=pages))
+    )
+    fallback_calls = []
+
+    def fallback(stream):
+        assert stream.tell() == 0
+        fallback_calls.append(True)
+        return "\x0c\x0c"
+
+    monkeypatch.setattr(module.pdfminer.high_level, "extract_text", fallback)
+    converter = PdfConverterWithOCR(MockOCRService() if with_ocr else None)
+    monkeypatch.setattr(converter, "_extract_page_images", lambda *args: [])
+    ocr_calls = []
+
+    def full_pages(stream, service):
+        assert stream.tell() == 0
+        ocr_calls.append(service)
+        return "## Page 1\n\nVector page OCR"
+
+    monkeypatch.setattr(converter, "_ocr_full_pages", full_pages)
+    result = converter.convert(io.BytesIO(b"vector PDF"), StreamInfo(extension=".pdf"))
+
+    assert fallback_calls == [True]
+    if with_ocr:
+        assert ocr_calls == [converter.ocr_service]
+        assert result.markdown == "## Page 1\n\nVector page OCR"
+    else:
+        assert not ocr_calls
+        assert not result.markdown.strip()

@@ -16,10 +16,10 @@ It exposes one tool: `convert_to_markdown(uri)`, where uri can be any `http:`, `
 
 ## Installation
 
-To install the package, use pip:
+The PyPI `markitdown-mcp` is the upstream Microsoft package and depends on upstream `markitdown`, which conflicts with `markitdown-gc`. This fork does not publish it; install from this repository in a fresh virtual environment:
 
 ```bash
-pip install markitdown-mcp
+pip install "git+https://github.com/greatgc-flow/markitdown-gc#subdirectory=packages/markitdown-mcp"
 ```
 
 ## Usage

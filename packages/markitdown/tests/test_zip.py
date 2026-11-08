@@ -143,6 +143,29 @@ def test_zip_member_docx_converts_as_docx(archive_url: Optional[str]) -> None:
 # Conversion regressions
 
 
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("with_images", [False, True])
+def test_zip_aggregates_child_image_omissions(nested, with_images):
+    from .test_extract_media import source
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        if with_images:
+            archive.writestr("images.docx", source("docx"))
+        archive.writestr("last.txt", "Plain text after the image document.")
+    if nested:
+        outer = io.BytesIO()
+        with zipfile.ZipFile(outer, "w") as archive:
+            archive.writestr("inner.zip", buf.getvalue())
+        buf = outer
+    buf.seek(0)
+
+    result = MarkItDown().convert_stream(buf, stream_info=StreamInfo(extension=".zip"))
+
+    assert "Plain text after the image document." in result.markdown
+    assert result.image_content_omitted is with_images
+
+
 def test_zip_duplicate_filenames_preserve_each_entry() -> None:
     """Same-named ZIP entries must retain their own content and archive order."""
     buf = io.BytesIO()
