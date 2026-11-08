@@ -274,7 +274,9 @@ def test_pdf_textless_vector_pages_trigger_fallback(monkeypatch, with_ocr):
 
     pages = [SimpleNamespace(extract_text=lambda: " \n\t", chars=[]) for _ in range(2)]
     monkeypatch.setattr(
-        module.pdfplumber, "open", lambda stream: nullcontext(SimpleNamespace(pages=pages))
+        module.pdfplumber,
+        "open",
+        lambda stream: nullcontext(SimpleNamespace(pages=pages)),
     )
     fallback_calls = []
 
