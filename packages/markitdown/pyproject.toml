@@ -40,7 +40,8 @@ dependencies = [
   "hwp-hwpx-parser>=1.0,<1.1",
   "python-pptx",
   "mammoth>=1.12.2,<2",
-  "pandas",
+  # pandas<4: XLS reading relies on xlrd via pandas; migrate before pandas 4 (#63).
+  "pandas<4",
   "openpyxl",
   "xlrd",
   "lxml",
@@ -55,7 +56,7 @@ all = [
   "hwp-hwpx-parser>=1.0,<1.1",
   "python-pptx",
   "mammoth>=1.12.2,<2",
-  "pandas",
+  "pandas<4",
   "openpyxl",
   "xlrd",
   "lxml",
@@ -72,8 +73,8 @@ all = [
 pptx = ["python-pptx"]
 hwp = ["hwp-hwpx-parser>=1.0,<1.1"]
 docx = ["mammoth>=1.12.2,<2", "lxml"]
-xlsx = ["pandas", "openpyxl"]
-xls = ["pandas", "xlrd"]
+xlsx = ["pandas<4", "openpyxl"]
+xls = ["pandas<4", "xlrd"]
 pdf = ["pdfminer.six>=20251230", "pdfplumber>=0.11.9"]
 outlook = ["olefile"]
 audio-transcription = ["pydub", "SpeechRecognition"]

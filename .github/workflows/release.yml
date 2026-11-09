@@ -10,6 +10,7 @@ concurrency:
 jobs:
   gate:
     # Publish only commits whose tests workflow already succeeded (#57).
+    # The release tag must point at a main commit with a successful push run.
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -20,9 +21,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
-          ok=$(gh run list --workflow tests.yml --commit "$SHA" --status success --json databaseId --jq length)
+          ok=$(gh run list --workflow tests.yml --branch main --event push --commit "$SHA" --status success --json databaseId --jq length)
           if [ "$ok" -lt 1 ]; then
-            echo "::error::No successful tests.yml run for $SHA; rerun failed jobs or dispatch tests first."
+            echo "::error::No successful tests.yml push run on main for $SHA; tag a main commit whose push run passed (rerun failed jobs if needed)."
             exit 1
           fi
   build:
