@@ -20,9 +20,9 @@ What you actually get (text only, no layout fidelity):
 - PDF: text per page; tables best-effort; scanned pages give NO text (see ocr).
 - DOCX/PPTX: headings, lists, tables, alt text; images are `![alt](file)` or truncated `data:` refs (`--keep-data-uris` keeps them, huge). PPTX has `<!-- Slide number: N -->`.
 - XLSX/XLS/CSV: one table per sheet. XLSX image extraction is opt-in.
-- HWP/HWPX (included by default): text + pipe tables (merged cells flattened), images `[IMAGE]`, footnotes appended; HWP < 5.0 and encrypted files unsupported.
+- HWP5/HWPX: text + pipe tables (merged cells flattened), images `[IMAGE]`, footnotes appended; encrypted files unsupported.
 - HTML, EPUB, RSS, IPYNB, JSON/XML/text, ZIP (recursive), MSG: text/structure.
-- Legacy .doc/.ppt/.rtf are not supported by the built-in converters; export to DOCX/PPTX or plain text first.
+- Legacy .doc/.ppt/.rtf and HWP < 5.0: opt in with `--libreoffice`, Python `MarkItDown(libreoffice_path="soffice")`, or `SOFFICE_PATH`. Requires local LibreOffice; otherwise unchanged/unsupported. Converts to DOCX/PPTX, then uses the native converter. Output starts `<!-- converted via LibreOffice X.Y from .doc; fidelity=DERIVED -->`: derived text, not native fidelity. Temporary input/output/profile are deleted; original input is unchanged.
 For known CP949 Korean input use --charset cp949; automatic detection can silently misidentify short legacy-encoded text.
 - Image: EXIF only if `exiftool` is installed, caption only with an LLM client; otherwise empty.
 - Audio: metadata + transcript (`[audio-transcription]`, ffmpeg, network).
@@ -86,6 +86,8 @@ S3 verify with the other peer: re-read the image independently; check every page
 S4 assemble: append `## OCR p3 (peer, model, date)` after the converted text; ledger ocr-work/manifest.json tracks pending/ocr_done/verified per id; no persistent cache; delete `ocr-work/` after verification.
 
 ## errors
+- Conflicting installation: CLI exits 1; library import warns once. Use a fresh dedicated venv; shared files may already be overwritten.
+- LibreOffice failure: check SOFFICE_PATH and input; timeout (default 60 seconds, Python `libreoffice_timeout=...`) kills the whole process tree, including soffice.bin. Failed pre-conversion raises FileConversionException.
 - UnsupportedFormatException: no converter accepted the input (add `-x EXT` / `-m MIME`; on Python 3.15 hint-free stdin is unsupported).
 - MissingDependencyException: install the extra named in the message (see install).
 - FileConversionException: a converter accepted the file but failed (corrupt/encrypted); the message lists attempts.
@@ -96,11 +98,13 @@ S4 assemble: append `## OCR p3 (peer, model, date)` after the converted text; le
 - Batch: loop in your own code, catch the three exceptions, log failures, continue.
 
 ## install
+- Never co-install upstream `markitdown` or its plugins (which may depend on it) with `markitdown-gc`: both ship `markitdown/`. Use a dedicated venv: `python -m venv .venv-gc`, then `.venv-gc/Scripts/python -m pip install markitdown-gc` (Windows) or `.venv-gc/bin/python -m pip install markitdown-gc` (macOS/Linux). Recreate a mixed environment; uninstalling one package can delete the other's files.
 - `pip install markitdown-gc` installs every document converter (pdf, docx, pptx, xlsx/xls, outlook, hwp/hwpx). Only `[audio-transcription]`, `[youtube-transcription]` and the Azure extras (`[az-doc-intel]`, `[az-content-understanding]`) are optional; `[all]` adds them. Per-format extras such as `[pdf]` still work as no-op aliases.
 - Python 3.10-3.15. On 3.15 magika (content sniffing) and youtube transcripts are unavailable: always pass the extension or MIME type for stdin/bytes.
 - Windows: set `PYTHONUTF8=1`; a short temp path avoids pip git-clone path-length errors.
 - `-p/--use-plugins` enables plugins; `-d -e ENDPOINT` uses Azure Document Intelligence.
 External programs (NOT installed by pip; optional, install only when needed; check with `exiftool -ver` / `ffmpeg -version`):
+- LibreOffice: legacy .doc/.ppt/.rtf/HWP<5 only; OFF unless `--libreoffice`, `libreoffice_path`, or `SOFFICE_PATH` is set. `--libreoffice` uses SOFFICE_PATH or PATH. Install locally yourself; no automatic downloads/network services. Runs with an isolated profile, macros/link updates/update checks disabled. Windows `winget install TheDocumentFoundation.LibreOffice` | macOS `brew install --cask libreoffice` | Debian/Ubuntu `sudo apt install libreoffice`.
 - exiftool (>= 12.24): adds EXIF/tag metadata lines for images and audio; without it conversion still works. Set `EXIFTOOL_PATH` if it is not on PATH.
   Windows `winget install OliverBetz.ExifTool` | macOS `brew install exiftool` | Debian/Ubuntu `sudo apt install libimage-exiftool-perl`.
 - ffmpeg: decodes audio for `[audio-transcription]` only. Windows `winget install Gyan.FFmpeg` | macOS `brew install ffmpeg` | Debian/Ubuntu `sudo apt install ffmpeg`.

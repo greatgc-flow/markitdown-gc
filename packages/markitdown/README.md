@@ -1,7 +1,9 @@
 # MarkItDown GC
 
 > Unofficial fork of [Microsoft MarkItDown](https://github.com/microsoft/markitdown), maintained at [greatgc-flow/markitdown-gc](https://github.com/greatgc-flow/markitdown-gc). This fork is not affiliated with or endorsed by Microsoft.
-> Install the `markitdown-gc` distribution. Do not install it together with upstream `markitdown` in the same environment: both provide the `markitdown` import and CLI, and the same plugin group. Use a fresh virtual environment.
+> Install `markitdown-gc` in a dedicated virtual environment. Never co-install upstream `markitdown` or plugins that depend on it: both ship `markitdown/` and overwrite shared files. The CLI exits 1 on detected conflicts; library import warns once. Recreate mixed environments; see `markitdown-gc --guide install`.
+
+Optional local LibreOffice converts legacy `.doc`, `.ppt`, `.rtf` and HWP < 5.0: enable `--libreoffice`, Python `MarkItDown(libreoffice_path="soffice")`, or `SOFFICE_PATH`. Output carries a LibreOffice version/source-extension comment with `fidelity=DERIVED`. See `--guide formats`, `--guide install` and `--guide errors`.
 
 > [!TIP]
 > MarkItDown is a Python package and command-line utility for converting various files to Markdown (e.g., for indexing, text analysis, etc).

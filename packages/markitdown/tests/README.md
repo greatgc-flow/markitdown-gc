@@ -31,6 +31,8 @@ appropriate section instead of creating a file for each bug or feature.
 | `test_cu.py` | Content Understanding routing, conversion, and registration |
 | `test_cli_misc.py` | CLI behavior outside the vector matrix, including service flags |
 | `test_module_misc.py` | Library infrastructure, cross-format options, and formats without a dedicated suite |
+| `test_libreoffice.py` | Opt-in legacy conversion, fake soffice, process-tree cleanup, and optional real LibreOffice |
+| `test_release.py` | Distribution identity, collision guard, and installation guidance |
 
 `test_module_misc.py` includes stream metadata, URI handling, charset detection,
 cross-format LLM options, and the existing notebook and audio regressions.

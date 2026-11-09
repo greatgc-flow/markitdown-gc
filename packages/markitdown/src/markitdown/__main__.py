@@ -30,6 +30,13 @@ def _require_input_or_pipe(parser, args):
 
 
 def main():
+    from ._installation import installation_conflict
+
+    conflict = installation_conflict()
+    if conflict:
+        sys.stderr.write(conflict + "\n")
+        sys.exit(1)
+
     parser = argparse.ArgumentParser(
         description="Convert various file formats to markdown.",
         prog="markitdown-gc",
@@ -154,6 +161,12 @@ def main():
     )
 
     parser.add_argument(
+        "--libreoffice",
+        action="store_true",
+        help="Enable local LibreOffice for legacy DOC/PPT/RTF/HWP<5 (SOFFICE_PATH or soffice on PATH).",
+    )
+
+    parser.add_argument(
         "--keep-data-uris",
         action="store_true",
         help="Keep data URIs (like base64-encoded images) in the output. By default, data URIs are truncated.",
@@ -221,6 +234,9 @@ def main():
         args.cu_endpoint or os.environ.get("MARKITDOWN_CU_ENDPOINT") or None
     )
     media_options = {}
+    libreoffice_options = {}
+    if args.libreoffice:
+        libreoffice_options["libreoffice_path"] = os.getenv("SOFFICE_PATH") or "soffice"
     if args.extract_media:
         media_options = {
             "extract_media": args.extract_media,
@@ -320,7 +336,9 @@ def main():
             if fields:
                 docintel_kwargs["docintel_query_fields"] = fields
 
-        markitdown = MarkItDown(enable_plugins=args.use_plugins, **docintel_kwargs)
+        markitdown = MarkItDown(
+            enable_plugins=args.use_plugins, **libreoffice_options, **docintel_kwargs
+        )
     elif args.use_cu:
         if args.cu_endpoint is None:
             parser.error(
@@ -349,9 +367,11 @@ def main():
                     parser.error(f"Unknown file type: {name}")
             cu_kwargs["cu_file_types"] = cu_types
 
-        markitdown = MarkItDown(enable_plugins=args.use_plugins, **cu_kwargs)
+        markitdown = MarkItDown(
+            enable_plugins=args.use_plugins, **libreoffice_options, **cu_kwargs
+        )
     else:
-        markitdown = MarkItDown(enable_plugins=args.use_plugins)
+        markitdown = MarkItDown(enable_plugins=args.use_plugins, **libreoffice_options)
 
     _require_input_or_pipe(parser, args)
 
@@ -412,6 +432,7 @@ def _check_exclusive(parser, args, flag, allowed):
             ("--list-plugins", args.list_plugins),
             ("--keep-data-uris", args.keep_data_uris),
             ("--extract-media", args.extract_media),
+            ("--libreoffice", args.libreoffice),
             ("--endpoint", args.endpoint),
             ("--cu-endpoint", args.cu_endpoint),
             ("--cu-analyzer", args.cu_analyzer),

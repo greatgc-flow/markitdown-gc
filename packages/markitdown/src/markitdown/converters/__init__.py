@@ -28,6 +28,7 @@ from ._cu_converter import (
 from ._epub_converter import EpubConverter
 from ._csv_converter import CsvConverter
 from ._hwp_converter import HwpConverter
+from ._libreoffice_converter import LibreOfficeConverter
 
 __all__ = [
     "PlainTextConverter",
@@ -53,4 +54,5 @@ __all__ = [
     "EpubConverter",
     "CsvConverter",
     "HwpConverter",
+    "LibreOfficeConverter",
 ]
