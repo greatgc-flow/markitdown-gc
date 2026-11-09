@@ -43,7 +43,9 @@ class LibreOfficeConverter(DocumentConverter):
                 header = file_stream.read(30)
             finally:
                 file_stream.seek(position)
-            if not header.startswith((b"HWP Document File V2.", b"HWP Document File V3.")):
+            if not header.startswith(
+                (b"HWP Document File V2.", b"HWP Document File V3.")
+            ):
                 return None
         return extension if extension in (".doc", ".ppt", ".rtf", ".hwp") else None
 
@@ -66,7 +68,9 @@ class LibreOfficeConverter(DocumentConverter):
             )
         target = "pptx" if extension == ".ppt" else "docx"
         try:
-            with tempfile.TemporaryDirectory(prefix="markitdown-libreoffice-") as directory:
+            with tempfile.TemporaryDirectory(
+                prefix="markitdown-libreoffice-"
+            ) as directory:
                 work = Path(directory).resolve()
                 profile, output = work / "profile", work / "derived"
                 lo._write_profile(profile)
@@ -93,7 +97,14 @@ class LibreOfficeConverter(DocumentConverter):
                 source = work / ("source" + extension)
                 source.write_bytes(file_stream.read())
                 lo._execute(
-                    [*base, "--convert-to", target, "--outdir", str(output), str(source)],
+                    [
+                        *base,
+                        "--convert-to",
+                        target,
+                        "--outdir",
+                        str(output),
+                        str(source),
+                    ],
                     cwd=work,
                     timeout_s=max(0.001, self.timeout - (time.monotonic() - started)),
                     output=work / "convert.log",
@@ -102,7 +113,9 @@ class LibreOfficeConverter(DocumentConverter):
                 if derived.is_symlink():
                     raise ValueError("LibreOffice produced a symlink")
                 # Validate the derived container before handing it to the native converter.
-                member = "ppt/presentation.xml" if target == "pptx" else "word/document.xml"
+                member = (
+                    "ppt/presentation.xml" if target == "pptx" else "word/document.xml"
+                )
                 data = derived.read_bytes()
                 with zipfile.ZipFile(io.BytesIO(data)) as archive:
                     if member not in archive.namelist():

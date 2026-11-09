@@ -261,7 +261,9 @@ class MarkItDown:
             self.register_converter(EpubConverter())
             self.register_converter(CsvConverter())
             self.register_converter(HwpConverter())
-            libreoffice_path = kwargs.get("libreoffice_path") or os.getenv("SOFFICE_PATH")
+            libreoffice_path = kwargs.get("libreoffice_path") or os.getenv(
+                "SOFFICE_PATH"
+            )
             if libreoffice_path:
                 self.register_converter(
                     LibreOfficeConverter(

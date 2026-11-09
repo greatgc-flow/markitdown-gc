@@ -30,7 +30,7 @@ def _resolve(path):
 def _write_profile(profile):
     (profile / "user").mkdir(parents=True)
     (profile / "user/registrymodifications.xcu").write_text(
-        '''<?xml version="1.0" encoding="UTF-8"?>
+        """<?xml version="1.0" encoding="UTF-8"?>
 <oor:items xmlns:oor="http://openoffice.org/2001/registry">
 <item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop></item>
 <item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop></item>
@@ -40,7 +40,7 @@ def _write_profile(profile):
 <item oor:path="/org.openoffice.Office.Calc/Content/Update"><prop oor:name="Link" oor:op="fuse"><value>2</value></prop></item>
 <item oor:path="/org.openoffice.Office.Impress/Content/Update"><prop oor:name="Link" oor:op="fuse"><value>2</value></prop></item>
 <item oor:path="/org.openoffice.Office.Jobs/Jobs/org.openoffice.Office.Jobs:Job['UpdateCheck']"><prop oor:name="Enabled" oor:op="fuse"><value>false</value></prop></item>
-</oor:items>''',
+</oor:items>""",
         encoding="utf-8",
     )
 
@@ -62,7 +62,10 @@ class _WindowsJob:
             ctypes.c_void_p,
             wintypes.DWORD,
         ]
-        self.kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        self.kernel.AssignProcessToJobObject.argtypes = [
+            wintypes.HANDLE,
+            wintypes.HANDLE,
+        ]
         self.kernel.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
         self.kernel.QueryInformationJobObject.argtypes = [
             wintypes.HANDLE,
@@ -203,4 +206,3 @@ def _capture(args: list[str], *, cwd: Path, timeout_s: float, output: Path) -> s
                     child._handle.Close()
         stream.seek(0)
         return stream.read(65536).decode("utf-8", errors="replace")
-

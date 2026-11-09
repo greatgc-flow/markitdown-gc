@@ -37,7 +37,7 @@ def fake_soffice(tmp_path, monkeypatch):
 
     script = tmp_path / "soffice.py"
     script.write_text(
-        '''
+        """
 from pathlib import Path
 import shutil, sys
 args = sys.argv[1:]
@@ -51,7 +51,7 @@ else:
     out = Path(args[args.index('--outdir') + 1])
     source = Path(args[-1])
     shutil.copyfile(Path(__file__).with_name('test.' + target), out / (source.stem + '.' + target))
-''',
+""",
         encoding="utf-8",
     )
     fixtures = Path(__file__).parent / "test_files"
@@ -97,10 +97,14 @@ def test_disabled_even_when_on_path(monkeypatch):
 
     monkeypatch.delenv("SOFFICE_PATH", raising=False)
     md = MarkItDown()
-    assert not any(isinstance(r.converter, LibreOfficeConverter) for r in md._converters)
+    assert not any(
+        isinstance(r.converter, LibreOfficeConverter) for r in md._converters
+    )
     md._magika = None
     with pytest.raises(UnsupportedFormatException):
-        md.convert_stream(io.BytesIO(b"\x00\x01"), stream_info=StreamInfo(extension=".doc"))
+        md.convert_stream(
+            io.BytesIO(b"\x00\x01"), stream_info=StreamInfo(extension=".doc")
+        )
 
 
 def test_env_enables(fake_soffice, monkeypatch):
@@ -149,7 +153,9 @@ def test_native_hwp_remains_native(fake_soffice):
     assert not fake_soffice
 
 
-@pytest.mark.parametrize("data", [b"HWP Document File V2.00 ", b"HWP Document File V3.00 "])
+@pytest.mark.parametrize(
+    "data", [b"HWP Document File V2.00 ", b"HWP Document File V3.00 "]
+)
 def test_hwp_legacy_signature_only_and_position_preserved(data):
     from markitdown.converters import LibreOfficeConverter
 
@@ -204,7 +210,9 @@ def test_failures_cleanup_and_remain_visible(tmp_path, monkeypatch, failure):
     md = MarkItDown(enable_builtins=False)
     md.register_converter(LibreOfficeConverter("fake", timeout=1))
     with pytest.raises(FileConversionException, match="LibreOffice|delegate"):
-        md.convert_stream(io.BytesIO(b"legacy"), stream_info=StreamInfo(extension=".doc"))
+        md.convert_stream(
+            io.BytesIO(b"legacy"), stream_info=StreamInfo(extension=".doc")
+        )
     assert works and all(not work.exists() for work in works)
 
 
@@ -214,7 +222,9 @@ def test_missing_explicit_tool_reports_fix(monkeypatch):
     md = MarkItDown(enable_builtins=False)
     md.register_converter(LibreOfficeConverter("no-such-soffice"))
     with pytest.raises(FileConversionException, match="SOFFICE_PATH"):
-        md.convert_stream(io.BytesIO(b"legacy"), stream_info=StreamInfo(extension=".doc"))
+        md.convert_stream(
+            io.BytesIO(b"legacy"), stream_info=StreamInfo(extension=".doc")
+        )
 
 
 @pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
@@ -231,24 +241,30 @@ def test_process_tree_is_killed(tmp_path, parent_exits):
 
     heartbeat = tmp_path / "heartbeat"
     child = (
-        "import pathlib,time; p=pathlib.Path(" + repr(str(heartbeat))
+        "import pathlib,time; p=pathlib.Path("
+        + repr(str(heartbeat))
         + "); exec('while True:\\n p.write_text(str(time.time())); time.sleep(.02)')"
     )
     parent = (
         "import subprocess,sys,time; subprocess.Popen([sys.executable, '-c', "
-        + repr(child) + "]); time.sleep(.3); "
+        + repr(child)
+        + "]); time.sleep(.3); "
         + ("pass" if parent_exits else "time.sleep(30)")
     )
     if parent_exits:
         lo._execute(
-            [sys.executable, "-c", parent], cwd=tmp_path,
-            timeout_s=3, output=tmp_path / "run.log",
+            [sys.executable, "-c", parent],
+            cwd=tmp_path,
+            timeout_s=3,
+            output=tmp_path / "run.log",
         )
     else:
         with pytest.raises(TimeoutError):
             lo._execute(
-                [sys.executable, "-c", parent], cwd=tmp_path,
-                timeout_s=1, output=tmp_path / "run.log",
+                [sys.executable, "-c", parent],
+                cwd=tmp_path,
+                timeout_s=1,
+                output=tmp_path / "run.log",
             )
     assert heartbeat.exists()
     stamp = heartbeat.read_text()
@@ -273,8 +289,10 @@ def test_executable_failure_and_output_limit(tmp_path, code, exception):
 
     with pytest.raises(exception, match="LibreOffice"):
         lo._execute(
-            [sys.executable, "-c", code], cwd=tmp_path,
-            timeout_s=3, output=tmp_path / "run.log",
+            [sys.executable, "-c", code],
+            cwd=tmp_path,
+            timeout_s=3,
+            output=tmp_path / "run.log",
         )
     assert not (tmp_path / "run.log").exists()
 

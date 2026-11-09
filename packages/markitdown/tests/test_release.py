@@ -25,10 +25,10 @@ def test_install_hints_use_fork_distribution():
     assert "pip install markitdown-gc" in guide
 
 
-@pytest.mark.parametrize(
-    "upstream,gc_version", [(True, __version__), (False, "0.0.0")]
-)
-def test_distribution_collision_warns_once_and_cli_refuses(tmp_path, upstream, gc_version):
+@pytest.mark.parametrize("upstream,gc_version", [(True, __version__), (False, "0.0.0")])
+def test_distribution_collision_warns_once_and_cli_refuses(
+    tmp_path, upstream, gc_version
+):
     for name, version in [("markitdown_gc", gc_version)] + (
         [("markitdown", "0.1.7")] if upstream else []
     ):
@@ -58,13 +58,19 @@ print(messages[0])
 """
     imported = subprocess.run(
         [sys.executable, "-c", code],
-        env=env, capture_output=True, text=True, timeout=30,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     assert imported.returncode == 0, imported.stderr
     for args in (["--version"], ["--guide", "install"], ["missing.doc"]):
         cli = subprocess.run(
             [sys.executable, "-m", "markitdown", *args],
-            env=env, capture_output=True, text=True, timeout=30,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert cli.returncode == 1, cli.stderr
         assert not cli.stdout
