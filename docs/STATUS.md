@@ -1,8 +1,8 @@
 # Project Status
 
-Current version: **0.3.6** (see [`__about__.py`](../packages/markitdown/src/markitdown/__about__.py)).
+Current version: **0.3.7** (see [`__about__.py`](../packages/markitdown/src/markitdown/__about__.py)).
 
-Next version: **0.3.7 (unreleased)**.
+Changes in 0.3.7:
 
 - #66: document dedicated environments; detect upstream distribution collisions and loaded-version mismatches. Library import warns once; CLI exits 1 with a fresh-venv fix.
 - Optional local LibreOffice converter: explicit CLI/Python/env opt-in for DOC/PPT/RTF/HWP < 5.0, native DOCX/PPTX extraction, DERIVED provenance, isolated profile, bounded execution, whole-tree termination and temporary cleanup. Ported from MarkItDown-Flow `engine/src/mdflow/preconvert.py` (R33/R34 in its `docs/renewal/01_DECISIONS.md`).
