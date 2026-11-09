@@ -31,7 +31,13 @@ def test_pr_supersession_is_scoped_to_its_workflow_and_run(workflow):
 
 def test_matrix_remains_full_and_all_job_failures_visible():
     tests = (WORKFLOWS / "tests.yml").read_text(encoding="utf-8")
-    assert tests.count("fail-fast: false") == 3
-    assert "windows-11-vs2026-arm" in tests
+    # tests, tests-arm, ocr-tests, mcp-tests
+    assert tests.count("fail-fast: false") == 4
+    # Core ARM runs only outside PRs; the release gate requires a main push run.
+    arm = tests.split("\n  tests-arm:\n", 1)[1].split("\n  ocr-tests:\n", 1)[0]
+    assert "if: github.event_name != 'pull_request'" in arm
+    assert "windows-11-vs2026-arm" in arm
+    release = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+    assert "--branch main --event push" in release
     for item in ("3.10", "3.11", "3.12", "3.13", "3.14", "3.15"):
         assert f'"{item}"' in tests
