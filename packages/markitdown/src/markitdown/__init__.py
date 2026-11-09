@@ -3,6 +3,10 @@
 # SPDX-License-Identifier: MIT
 
 from .__about__ import __version__
+from ._installation import warn_if_conflicting
+
+warn_if_conflicting()
+
 from ._markitdown import (
     MarkItDown,
     PRIORITY_SPECIFIC_FILE_FORMAT,

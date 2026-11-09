@@ -1,7 +1,7 @@
 # MarkItDown GC
 
 > Unofficial fork of [Microsoft MarkItDown](https://github.com/microsoft/markitdown), maintained at [greatgc-flow/markitdown-gc](https://github.com/greatgc-flow/markitdown-gc). This fork is not affiliated with or endorsed by Microsoft.
-> Install the `markitdown-gc` distribution. Do not install it together with upstream `markitdown` in the same environment: both provide the `markitdown` import and CLI, and the same plugin group. Use a fresh virtual environment.
+> Install the `markitdown-gc` distribution in a dedicated virtual environment. Never co-install upstream `markitdown` or plugins that depend on it: both distributions ship `markitdown/` and overwrite each other's files. The CLI refuses a detected conflict (exit 1); library import warns once. Recreate a mixed environment. See `markitdown-gc --guide install` in a clean environment.
 
 [![PyPI](https://img.shields.io/pypi/v/markitdown-gc.svg)](https://pypi.org/project/markitdown-gc/)
 ![PyPI - Downloads](https://img.shields.io/pypi/dd/markitdown-gc)
@@ -120,6 +120,8 @@ At the moment, the following optional dependencies are available:
 * `[youtube-transcription]` Installs dependencies for fetching YouTube video transcription
 
 ### HWP/HWPX
+
+Legacy `.doc`, `.ppt`, `.rtf` and HWP < 5.0 can use locally installed LibreOffice, explicitly enabled with `markitdown-gc old.doc --libreoffice`, `MarkItDown(libreoffice_path="soffice")`, or `SOFFICE_PATH` (full executable path). Without opt-in the existing behavior is unchanged. No automatic installation or network service is used. Conversion uses a temporary isolated profile and DOCX/PPTX intermediates, a 60-second timeout (`libreoffice_timeout` in Python), process-tree termination and cleanup. Output begins `<!-- converted via LibreOffice X.Y from .doc; fidelity=DERIVED -->`; layout fidelity may change. See `--guide install` and `--guide errors`.
 
 HWP5 and HWPX support is included in `[all]`, or can be installed separately with `pip install 'markitdown-gc[hwp]'`.
 

@@ -42,6 +42,7 @@ from .converters import (
     ContentUnderstandingConverter,
     CsvConverter,
     HwpConverter,
+    LibreOfficeConverter,
 )
 
 from ._base_converter import DocumentConverter, DocumentConverterResult
@@ -140,7 +141,11 @@ class ConverterRegistration:
 
 class MarkItDown:
     """(In preview) An extremely simple text-based document reader, suitable for LLM use.
-    This reader will convert common file-types or webpages to Markdown."""
+    This reader will convert common file-types or webpages to Markdown.
+
+    Set libreoffice_path (or SOFFICE_PATH) to opt into local legacy conversion.
+    libreoffice_timeout limits LibreOffice execution to 60 seconds by default.
+    """
 
     def __init__(
         self,
@@ -256,6 +261,16 @@ class MarkItDown:
             self.register_converter(EpubConverter())
             self.register_converter(CsvConverter())
             self.register_converter(HwpConverter())
+            libreoffice_path = kwargs.get("libreoffice_path") or os.getenv(
+                "SOFFICE_PATH"
+            )
+            if libreoffice_path:
+                self.register_converter(
+                    LibreOfficeConverter(
+                        libreoffice_path,
+                        timeout=kwargs.get("libreoffice_timeout", 60),
+                    )
+                )
 
             # Register Document Intelligence converter at the top of the stack if endpoint is provided
             docintel_endpoint = kwargs.get("docintel_endpoint")
@@ -701,7 +716,9 @@ class MarkItDown:
                                 converter=converter, exc_info=sys.exc_info()
                             )
                         )
-                        if kwargs.get("extract_media"):
+                        if kwargs.get("extract_media") or isinstance(
+                            converter, LibreOfficeConverter
+                        ):
                             raise FileConversionException(attempts=failed_attempts)
                     finally:
                         file_stream.seek(cur_pos)
