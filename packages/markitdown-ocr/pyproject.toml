@@ -32,7 +32,7 @@ dependencies = [
   "mammoth>=1.12.2,<2",
   "python-docx",
   "python-pptx",
-  "pandas",
+  "pandas<4",
   "openpyxl",
   "Pillow>=12.1.1",
 ]
