@@ -32,6 +32,40 @@ jobs:
             python-version: "3.12"
           - os: windows-latest
             python-version: "3.15"
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build native Cryptography wheel
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        uses: ./.github/actions/build-arm-cryptography
+
+      - name: Install media tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libimage-exiftool-perl ffmpeg
+          exiftool -ver
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Install Hatch
+        run: pipx install hatch
+      - name: Run tests
+        working-directory: packages/markitdown
+        run: hatch test --python "${{ matrix.python-version }}"
+
+
+  tests-arm:
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
           - os: windows-11-vs2026-arm
             python-version: "3.12"
 
@@ -67,12 +101,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        # 3.15 skipped: not yet validated for the sibling package dependencies
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.12"]
         include:
           - os: windows-latest
-            python-version: "3.12"
-          - os: windows-11-vs2026-arm
             python-version: "3.12"
 
     steps:
@@ -101,12 +132,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        # 3.15 skipped: not yet validated for the sibling package dependencies
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.12"]
         include:
           - os: windows-latest
-            python-version: "3.12"
-          - os: windows-11-vs2026-arm
             python-version: "3.12"
 
     steps:
