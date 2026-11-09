@@ -10,7 +10,7 @@
 - Use fork project URLs and fork distribution names in docs and install hints.
 - Keep local directory requirements, Dockerfiles and CI paths unchanged.
 - Sibling OCR/MCP/sample-plugin packages are not published for the fork; they depend
-  on `markitdown-gc` (since 0.3.6) and are installed from this repository.
+  on `markitdown-gc` (>=0.3.5) and are installed from this repository.
 
 ## Steps
 1. Add a failing regression for upstream distribution names in install guidance.

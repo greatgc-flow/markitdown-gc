@@ -166,6 +166,39 @@ def test_zip_aggregates_child_image_omissions(nested, with_images):
     assert result.image_content_omitted is with_images
 
 
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("unsupported", [False, True])
+def test_zip_aggregates_child_unsupported_media(nested, unsupported):
+    class FlaggedConverter(_RecordingConverter):
+        def convert(self, file_stream, stream_info, **kwargs):
+            text = file_stream.read().decode("utf-8")
+            return DocumentConverterResult(
+                markdown=text,
+                unsupported_media=unsupported and text == "Unsupported media",
+            )
+
+    markitdown = MarkItDown(enable_builtins=False)
+    markitdown.register_converter(FlaggedConverter())
+    markitdown.register_converter(ZipConverter(markitdown=markitdown))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("first.txt", "Unsupported media")
+        archive.writestr("last.txt", "Plain text")
+    if nested:
+        outer = io.BytesIO()
+        with zipfile.ZipFile(outer, "w") as archive:
+            archive.writestr("inner.zip", buf.getvalue())
+        buf = outer
+    buf.seek(0)
+
+    result = markitdown.convert_stream(buf, stream_info=StreamInfo(extension=".zip"))
+
+    assert "Unsupported media" in result.markdown
+    assert "Plain text" in result.markdown
+    assert result.unsupported_media is unsupported
+    assert result.image_content_omitted is False
+
+
 def test_zip_duplicate_filenames_preserve_each_entry() -> None:
     """Same-named ZIP entries must retain their own content and archive order."""
     buf = io.BytesIO()

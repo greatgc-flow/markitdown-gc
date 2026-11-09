@@ -6,6 +6,7 @@ Extracts images from PDFs and performs OCR while maintaining document context.
 import io
 import sys
 from typing import Any, BinaryIO, Optional
+from warnings import warn
 
 from markitdown import DocumentConverter, DocumentConverterResult, StreamInfo
 from markitdown._exceptions import (
@@ -182,6 +183,7 @@ class PdfConverterWithOCR(DocumentConverter):
         pdf_bytes = io.BytesIO(file_stream.read())
 
         markdown_content = []
+        conversion_result = DocumentConverterResult(markdown="")
 
         try:
             with pdfplumber.open(pdf_bytes) as pdf:
@@ -193,59 +195,24 @@ class PdfConverterWithOCR(DocumentConverter):
                         images_on_page = self._extract_page_images(pdf_bytes, page_num)
 
                         if images_on_page:
-                            # Extract text lines with Y positions
-                            chars = page.chars
-                            if chars:
-                                # Group chars into lines based on Y position
-                                lines_with_y = []
-                                current_line = []
-                                current_y = None
-
-                                for char in sorted(
-                                    chars, key=lambda c: (c["top"], c["x0"])
-                                ):
-                                    y = char["top"]
-                                    if current_y is None:
-                                        current_y = y
-                                    elif abs(y - current_y) > 2:  # New line threshold
-                                        if current_line:
-                                            text = "".join(
-                                                [c["text"] for c in current_line]
-                                            )
-                                            lines_with_y.append(
-                                                {"y": current_y, "text": text.strip()}
-                                            )
-                                        current_line = []
-                                        current_y = y
-                                    current_line.append(char)
-
-                                # Add last line
-                                if current_line:
-                                    text = "".join([c["text"] for c in current_line])
-                                    lines_with_y.append(
-                                        {"y": current_y, "text": text.strip()}
-                                    )
-                            else:
-                                # Fallback: use simple text extraction
-                                text_content = page.extract_text() or ""
-                                lines_with_y = [
-                                    {"y": i * 10, "text": line}
-                                    for i, line in enumerate(text_content.split("\n"))
-                                ]
+                            # Native extraction infers spaces from glyph positions.
+                            lines_with_y = [
+                                {"y": line["top"], "text": line["text"].strip()}
+                                for line in page.extract_text_lines(return_chars=False)
+                            ]
 
                             # OCR all images
                             image_data = []
                             for img_info in images_on_page:
-                                ocr_result = ocr_service.extract_text(
-                                    img_info["stream"]
+                                text = self._extract_ocr_text(
+                                    img_info["stream"], ocr_service, conversion_result
                                 )
-                                if ocr_result.text.strip():
+                                if text:
                                     image_data.append(
                                         {
                                             "y_pos": img_info["y_pos"],
                                             "name": img_info["name"],
-                                            "ocr_text": ocr_result.text,
-                                            "backend": ocr_result.backend_used,
+                                            "ocr_text": text,
                                             "type": "image",
                                         }
                                     )
@@ -286,6 +253,22 @@ class PdfConverterWithOCR(DocumentConverter):
                         if text_content.strip():
                             page_content.append(text_content.strip())
 
+                    if ocr_service and not any(
+                        content.strip() for content in page_content
+                    ):
+                        try:
+                            text = self._ocr_page(page, ocr_service, conversion_result)
+                            page_content.append(
+                                f"*[Image OCR]\n{text}\n[End OCR]*"
+                                if text
+                                else "*[No text could be extracted from this page]*"
+                            )
+                        except Exception as exc:
+                            conversion_result.image_content_omitted = True
+                            page_content.append(
+                                f"*[Error processing page {page_num}: {str(exc)}]*"
+                            )
+
                     if any(content.strip() for content in page_content):
                         markdown_content.append(f"\n## Page {page_num}\n")
                         markdown_content.extend(page_content)
@@ -294,22 +277,39 @@ class PdfConverterWithOCR(DocumentConverter):
                 markdown = "\n\n".join(markdown_content).strip()
 
         except Exception:
-            # Fallback to pdfminer
-            pdf_bytes.seek(0)
-            markdown = pdfminer.high_level.extract_text(pdf_bytes)
-        else:
-            # Headings alone must not prevent text or full-page OCR fallback.
-            if not markdown:
+            markdown = ""
+
+        if not markdown:
+            try:
                 pdf_bytes.seek(0)
                 markdown = pdfminer.high_level.extract_text(pdf_bytes)
+            except Exception:
+                recovered = ""
+                if ocr_service:
+                    try:
+                        pdf_bytes.seek(0)
+                        recovered = self._ocr_full_pages(
+                            pdf_bytes,
+                            ocr_service,
+                            require_text=True,
+                            conversion_result=conversion_result,
+                        )
+                    except Exception:
+                        pass
+                if not recovered.strip():
+                    raise
+                markdown = recovered
 
         # Final fallback: If still empty/whitespace and OCR is available,
         # treat as scanned PDF and OCR full pages
         if ocr_service and (not markdown or not markdown.strip()):
             pdf_bytes.seek(0)
-            markdown = self._ocr_full_pages(pdf_bytes, ocr_service)
+            markdown = self._ocr_full_pages(
+                pdf_bytes, ocr_service, conversion_result=conversion_result
+            )
 
-        return DocumentConverterResult(markdown=markdown)
+        conversion_result.markdown = markdown
+        return conversion_result
 
     def _extract_page_images(self, pdf_bytes: io.BytesIO, page_num: int) -> list[dict]:
         """
@@ -338,8 +338,45 @@ class PdfConverterWithOCR(DocumentConverter):
 
         return images
 
+    def _extract_ocr_text(
+        self,
+        image_stream: BinaryIO,
+        ocr_service: LLMVisionOCRService,
+        conversion_result: Optional[DocumentConverterResult] = None,
+    ) -> str:
+        """Warn on reported OCR failures and track missing image text locally."""
+        result = ocr_service.extract_text(image_stream)
+        text = "" if result.error else result.text.strip()
+        if not text and conversion_result is not None:
+            conversion_result.image_content_omitted = True
+        if result.error:
+            warn(
+                f"PDF image OCR failed: {result.error}. Image text omitted.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        return text
+
+    def _ocr_page(
+        self,
+        page: Any,
+        ocr_service: LLMVisionOCRService,
+        conversion_result: Optional[DocumentConverterResult] = None,
+    ) -> str:
+        """Render one pdfplumber page and return its recognized text."""
+        page_img = page.to_image(resolution=300)
+        img_stream = io.BytesIO()
+        page_img.original.save(img_stream, format="PNG")
+        img_stream.seek(0)
+        return self._extract_ocr_text(img_stream, ocr_service, conversion_result)
+
     def _ocr_full_pages(
-        self, pdf_bytes: io.BytesIO, ocr_service: LLMVisionOCRService
+        self,
+        pdf_bytes: io.BytesIO,
+        ocr_service: LLMVisionOCRService,
+        *,
+        require_text: bool = False,
+        conversion_result: Optional[DocumentConverterResult] = None,
     ) -> str:
         """
         Fallback for scanned PDFs: Convert entire pages to images and OCR them.
@@ -348,11 +385,14 @@ class PdfConverterWithOCR(DocumentConverter):
         Args:
             pdf_bytes: PDF file as BytesIO
             ocr_service: OCR service to use
+            require_text: Return empty if OCR cannot recover any text.
+            conversion_result: Track image omissions in the current conversion.
 
         Returns:
             Markdown text extracted from OCR of full pages
         """
         markdown_parts = []
+        has_text = False
 
         try:
             pdf_bytes.seek(0)
@@ -361,17 +401,9 @@ class PdfConverterWithOCR(DocumentConverter):
                     try:
                         markdown_parts.append(f"\n## Page {page_num}\n")
 
-                        # Render page to image
-                        page_img = page.to_image(resolution=300)
-                        img_stream = io.BytesIO()
-                        page_img.original.save(img_stream, format="PNG")
-                        img_stream.seek(0)
-
-                        # Run OCR
-                        ocr_result = ocr_service.extract_text(img_stream)
-
-                        if ocr_result.text.strip():
-                            text = ocr_result.text.strip()
+                        text = self._ocr_page(page, ocr_service, conversion_result)
+                        if text:
+                            has_text = True
                             markdown_parts.append(f"*[Image OCR]\n{text}\n[End OCR]*")
                         else:
                             markdown_parts.append(
@@ -379,6 +411,8 @@ class PdfConverterWithOCR(DocumentConverter):
                             )
 
                     except Exception as e:
+                        if conversion_result is not None:
+                            conversion_result.image_content_omitted = True
                         markdown_parts.append(
                             f"*[Error processing page {page_num}: {str(e)}]*"
                         )
@@ -387,6 +421,7 @@ class PdfConverterWithOCR(DocumentConverter):
         except Exception:
             # pdfplumber failed (e.g. malformed EOF) — try PyMuPDF for rendering
             markdown_parts = []
+            has_text = False
             try:
                 import fitz  # PyMuPDF
 
@@ -401,10 +436,11 @@ class PdfConverterWithOCR(DocumentConverter):
                         img_stream = io.BytesIO(pix.tobytes("png"))
                         img_stream.seek(0)
 
-                        ocr_result = ocr_service.extract_text(img_stream)
-
-                        if ocr_result.text.strip():
-                            text = ocr_result.text.strip()
+                        text = self._extract_ocr_text(
+                            img_stream, ocr_service, conversion_result
+                        )
+                        if text:
+                            has_text = True
                             markdown_parts.append(f"*[Image OCR]\n{text}\n[End OCR]*")
                         else:
                             markdown_parts.append(
@@ -412,12 +448,20 @@ class PdfConverterWithOCR(DocumentConverter):
                             )
 
                     except Exception as e:
+                        if conversion_result is not None:
+                            conversion_result.image_content_omitted = True
                         markdown_parts.append(
                             f"*[Error processing page {page_num}: {str(e)}]*"
                         )
                         continue
                 doc.close()
             except Exception:
-                return "*[Error: Could not process scanned PDF]*"
+                if conversion_result is not None:
+                    conversion_result.image_content_omitted = True
+                return (
+                    "" if require_text else "*[Error: Could not process scanned PDF]*"
+                )
 
+        if require_text and not has_text:
+            return ""
         return "\n\n".join(markdown_parts).strip()

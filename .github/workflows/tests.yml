@@ -125,3 +125,17 @@ jobs:
       - name: Run tests
         working-directory: packages/markitdown-mcp
         run: pytest
+
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and run the CLI image
+        run: |
+          docker build -t markitdown-gc:ci .
+          docker run --rm -i markitdown-gc:ci -x .html < packages/markitdown/tests/test_files/test_blog.html | grep -q "Large language models"
+      - name: Build and run the MCP image
+        run: |
+          docker build -t markitdown-mcp:ci packages/markitdown-mcp
+          docker run --rm markitdown-mcp:ci --help
