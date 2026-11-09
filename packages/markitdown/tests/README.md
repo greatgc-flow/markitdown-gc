@@ -42,7 +42,7 @@ Run the suite from `packages/markitdown`:
 hatch test
 ```
 
-Running `python -m pytest` directly requires an editable install (`pip install -e packages/markitdown`); `hatch test` is the canonical runner.
+Running `python -m pytest` directly requires an editable install (`pip install -e .` from this directory); `hatch test` is the canonical runner.
 
 To run a single format:
 
