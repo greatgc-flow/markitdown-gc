@@ -4,6 +4,8 @@ The output reproduces what ``pandas.read_excel(engine="xlrd")`` followed by
 ``DataFrame.to_html(index=False)`` produced, so XLS Markdown stays unchanged
 without pandas: first row as header, pandas' default NA strings, per-column
 type inference, and pandas' display formatting for numbers and dates.
+Like XLSX sheets, empty cells render blank and whole numbers in float columns
+render without ".0" (issue #70).
 
 One deliberate exception: text that pandas would coerce into a lossy number
 (digit strings beyond int64/uint64, floats that overflow to inf) stays text.
@@ -125,6 +127,14 @@ def _format_floats(values: list[float]) -> list[str]:
     return strings
 
 
+def format_float_cells(values: list[float]) -> list[str]:
+    """pandas' float display; empty cells blank, whole numbers without ".0" (#70)."""
+    return [
+        "" if v != v else str(int(v)) if v.is_integer() else text
+        for v, text in zip(values, _format_floats(values))
+    ]
+
+
 def _format_datetimes(values: list[Any]) -> list[str]:
     stamps = [v for v in values if isinstance(v, datetime.datetime)]
     if all(v.time() == datetime.time() for v in stamps):
@@ -138,7 +148,7 @@ def _format_datetimes(values: list[Any]) -> list[str]:
 
     def text(value: Any) -> str:
         if not isinstance(value, datetime.datetime):
-            return "NaT"
+            return ""
         return value.isoformat(" ", spec) if spec else value.date().isoformat()
 
     return [text(v) for v in values]
@@ -162,10 +172,11 @@ def _format_column(values: list[Any]) -> list[str]:
         if any(n > _INT64_MAX for n in ints) and (
             any(n < 0 for n in ints) or any(_is_nan(n) for n in numbers)
         ):
-            # pandas' uint64 conflict: the raw cells are kept, blanks included.
-            return [_format_object(v) for v in values]
+            # pandas' uint64 conflict: the raw cells are kept, blanks included
+            # (NaN cells, e.g. errors, render blank like elsewhere; #70).
+            return ["" if _is_nan(v) else _format_object(v) for v in values]
         if any(isinstance(n, float) for n in numbers):
-            return _format_floats([float(n) for n in numbers])
+            return format_float_cells([float(n) for n in numbers])
         if all(isinstance(n, bool) for n in numbers):
             return [str(n) for n in numbers]
         return [str(int(n)) for n in numbers]
@@ -183,7 +194,7 @@ def _format_column(values: list[Any]) -> list[str]:
     if any(isinstance(v, datetime.datetime) for v in values):
         if all(isinstance(v, datetime.datetime) or _is_nan(v) for v in values):
             return _format_datetimes(values)
-    return [_format_object(v) for v in values]
+    return ["" if _is_nan(v) else _format_object(v) for v in values]
 
 
 def _strip_bom(row: list[Any]) -> list[Any]:
