@@ -273,7 +273,8 @@ def test_generated_workbooks_match_pandas_reference(monkeypatch, book):
 
 
 # Edge cases from the PR #72 review, compared as HTML (stricter than Markdown).
-# The target is pandas 3.x; PANDAS3_ONLY cases differ on pandas 2.x.
+# The reference is pandas 3.x (the renderer follows it); the pandas comparison is
+# skipped on pandas 2.x, which renders several of these differently.
 EDGE_CASES = {
     "hdr_newline": [
         [T("First\nName"), T("Tab\there"), T("trail\n")],
@@ -305,8 +306,6 @@ EDGE_CASES = {
     "bool_float_mix": [[T("v")], [B(1)], [N(2.5)]],
     "date_9999": [[T("d")], [D(2958465)], [D(43831)]],
 }
-# pandas 2.x keeps dates outside the ns range as objects ("9999-12-31 00:00:00").
-PANDAS3_ONLY = {"date_9999"}
 # Intentionally NOT pandas-identical: pandas parses these digit strings as
 # numbers and loses information (9.400112e+21, dropped leading zeros, inf), so
 # the renderer keeps the text as written. Values are the <td> cells, row-major.
@@ -330,8 +329,8 @@ def test_edge_cases_match_pandas_reference(monkeypatch, name):
         return
 
     pd = pytest.importorskip("pandas")
-    if name in PANDAS3_ONLY and int(pd.__version__.split(".")[0]) < 3:
-        pytest.skip("pandas 2.x differs here; the renderer follows pandas 3")
+    if int(pd.__version__.split(".")[0]) < 3:
+        pytest.skip("edge-case reference is pandas 3; pandas 2.x renders differently")
     monkeypatch.setattr(xlrd, "open_workbook", lambda *args, **kwargs: book)
 
     def reference():
