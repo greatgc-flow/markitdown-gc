@@ -45,6 +45,7 @@ from .converters import (
     LibreOfficeConverter,
 )
 
+from .converters._exiftool import _discover_exiftool
 from ._base_converter import DocumentConverter, DocumentConverterResult
 
 from ._exceptions import (
@@ -209,31 +210,9 @@ class MarkItDown:
             self._exiftool_path = kwargs.get("exiftool_path")
             self._style_map = kwargs.get("style_map")
 
+            # EXIFTOOL_PATH, else exiftool on PATH in a well-known directory
             if self._exiftool_path is None:
-                self._exiftool_path = os.getenv("EXIFTOOL_PATH")
-
-            # Still none? Check well-known paths
-            if self._exiftool_path is None:
-                candidate = shutil.which("exiftool")
-                if candidate:
-                    candidate = os.path.abspath(candidate)
-                    # normcase: Windows directories match in any letter case
-                    candidate_dir = os.path.normcase(os.path.dirname(candidate))
-                    if any(
-                        os.path.normcase(d) == candidate_dir
-                        for d in [
-                            "/usr/bin",
-                            "/usr/local/bin",
-                            "/opt",
-                            "/opt/bin",
-                            "/opt/local/bin",
-                            "/opt/homebrew/bin",
-                            "C:\\Windows\\System32",
-                            "C:\\Program Files",
-                            "C:\\Program Files (x86)",
-                        ]
-                    ):
-                        self._exiftool_path = candidate
+                self._exiftool_path = _discover_exiftool()
 
             # Register converters for successful browsing operations
             # Later registrations are tried first / take higher priority than earlier registrations
