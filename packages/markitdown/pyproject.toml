@@ -65,7 +65,7 @@ all = [
   "pdfplumber>=0.11.9",
   "olefile",
   "pydub",
-  "SpeechRecognition",
+  "SpeechRecognition>=3.10.4",
   "youtube-transcript-api~=1.2.3; python_full_version < '3.15'",
   "azure-ai-documentintelligence",
   "azure-ai-contentunderstanding>=1.2.0b1",
@@ -78,7 +78,7 @@ xlsx = ["pandas<4", "openpyxl"]
 xls = ["xlrd"]
 pdf = ["pdfminer.six>=20251230", "pdfplumber>=0.11.9"]
 outlook = ["olefile"]
-audio-transcription = ["pydub", "SpeechRecognition"]
+audio-transcription = ["pydub", "SpeechRecognition>=3.10.4"]
 youtube-transcription = ["youtube-transcript-api~=1.2.3; python_full_version < '3.15'"]
 az-doc-intel = ["azure-ai-documentintelligence", "azure-identity"]
 # >=1.2.0b1 required for to_llm_input() helper used by ContentUnderstandingConverter

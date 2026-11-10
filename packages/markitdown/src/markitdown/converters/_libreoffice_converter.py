@@ -2,7 +2,6 @@
 
 import io
 import math
-import re
 from pathlib import Path
 import tempfile
 import time
@@ -75,15 +74,7 @@ class LibreOfficeConverter(DocumentConverter):
                 profile, output = work / "profile", work / "derived"
                 lo._write_profile(profile)
                 output.mkdir()
-                base = [
-                    executable,
-                    "-env:UserInstallation=" + profile.as_uri(),
-                    "--headless",
-                    "--norestore",
-                    "--nodefault",
-                    "--nofirststartwizard",
-                    "--nolockcheck",
-                ]
+                base = lo._command(executable, profile)
                 started = time.monotonic()
                 version = lo._execute(
                     [*base, "--version"],
@@ -91,7 +82,7 @@ class LibreOfficeConverter(DocumentConverter):
                     timeout_s=self.timeout,
                     output=work / "version.log",
                 )
-                match = re.search(r"LibreOffice\s+(\d+(?:\.\d+)+)", version)
+                match = lo._VERSION.search(version)
                 if not match:
                     raise ValueError("LibreOffice version unavailable")
                 source = work / ("source" + extension)
