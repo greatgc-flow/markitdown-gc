@@ -99,7 +99,9 @@ class AudioConverter(DocumentConverter):
                 )
                 if transcript:
                     md_content += "\n\n### Audio Transcript:\n" + transcript
-            except MissingDependencyException:
+            except (MissingDependencyException, OSError):
+                # OSError covers a missing ffmpeg/ffprobe (pydub launches them
+                # by name); keep the metadata and skip the transcript.
                 pass
 
         # Return the result
