@@ -335,7 +335,9 @@ def test_speech_transcription_uses_https(monkeypatch: pytest.MonkeyPatch) -> Non
     pytest.importorskip("speech_recognition")
     pytest.importorskip("pydub")
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
-        pytest.skip("pydub needs ffmpeg/ffprobe; without them the transcript is skipped (#74)")
+        pytest.skip(
+            "pydub needs ffmpeg/ffprobe; without them the transcript is skipped (#74)"
+        )
     from speech_recognition.recognizers import google
 
     requests_sent = []
