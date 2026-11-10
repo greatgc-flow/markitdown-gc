@@ -9,7 +9,7 @@ from typing import BinaryIO, Any, Iterator, Optional
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 from ._html_converter import HtmlConverter
-from ._xls_table import sheet_to_html
+from ._xls_table import _format_datetimes, format_float_cells, sheet_to_html
 from .._base_converter import DocumentConverter, DocumentConverterResult
 from .._exceptions import MissingDependencyException, MISSING_DEPENDENCY_MESSAGE
 from .._stream_info import StreamInfo
@@ -138,6 +138,23 @@ def _repair_sheetview_show_zeroes(
     return repaired_stream
 
 
+def _frame_to_html(frame: Any) -> str:
+    """Render a sheet with empty cells blank and whole numbers without ".0" (#70).
+
+    Float and datetime columns use the pandas-compatible XLS formatting; all
+    other cells keep pandas' own display.
+    """
+    readable = frame.copy()
+    for name, column in frame.items():
+        if column.dtype.kind == "f":
+            readable[name] = format_float_cells(column.tolist())
+        elif column.dtype.kind == "M" and column.isna().any():
+            readable[name] = _format_datetimes(
+                [None if pd.isna(v) else v.to_pydatetime() for v in column]
+            )
+    return readable.to_html(index=False, na_rep="")
+
+
 class XlsxConverter(DocumentConverter):
     """
     Converts XLSX files to Markdown, with each sheet presented as a separate Markdown table.
@@ -211,7 +228,7 @@ class XlsxConverter(DocumentConverter):
 
             for s in sheets:
                 md_content += f"## {s}\n"
-                html_content = sheets[s].to_html(index=False)
+                html_content = _frame_to_html(sheets[s])
                 md_content += (
                     self._html_converter.convert_string(
                         html_content, **kwargs

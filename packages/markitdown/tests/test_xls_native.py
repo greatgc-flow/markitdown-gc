@@ -1,8 +1,9 @@
 """XLS reads through xlrd directly, without pandas (issue #63).
 
-The pandas reference below is the pre-#63 XLS pipeline, verbatim. While pandas
-is installed, every case must stay byte-identical to it, except the explicit
-DOCUMENTED_DIVERGENCES where pandas loses information.
+The pandas reference below is the pre-#63 XLS pipeline, rendered with the XLSX
+table semantics of issue #70 (empty cells blank, whole numbers without ".0").
+While pandas is installed, every case must stay byte-identical to it, except the
+explicit DOCUMENTED_DIVERGENCES where pandas loses information.
 """
 
 import io
@@ -242,14 +243,16 @@ SCENARIOS = {
 
 
 def _pandas_reference(data: bytes) -> str:
-    """The XLS conversion exactly as it was before issue #63."""
+    """The pre-#63 XLS conversion, rendered like XLSX sheets (#70)."""
     pd = pytest.importorskip("pandas")
+    from markitdown.converters._xlsx_converter import _frame_to_html
+
     sheets = pd.read_excel(io.BytesIO(data), sheet_name=None, engine="xlrd")
     html_converter = HtmlConverter()
     md_content = ""
     for s in sheets:
         md_content += f"## {s}\n"
-        html_content = sheets[s].to_html(index=False)
+        html_content = _frame_to_html(sheets[s])
         md_content += (
             html_converter.convert_string(html_content).markdown.strip() + "\n\n"
         )
@@ -272,7 +275,9 @@ def test_generated_workbooks_match_pandas_reference(monkeypatch, book):
     assert _convert(b"generated") == _pandas_reference(b"generated")
 
 
-# Edge cases from the PR #72 review, compared as HTML (stricter than Markdown).
+# Edge cases from the PR #72 review, compared as HTML (stricter than Markdown)
+# against pandas rendered through the same #70 transform as _pandas_reference
+# (_frame_to_html: empty cells blank, whole numbers without ".0").
 # The target is pandas 3.x; PANDAS3_ONLY cases differ on pandas 2.x.
 EDGE_CASES = {
     "hdr_newline": [
@@ -295,6 +300,7 @@ EDGE_CASES = {
     "num_neg_lt_int64": [[T("v")], [N(-1e19)], [N(1)]],
     "num_uint_with_gap": [[T("v")], [N(2**63)], [_]],
     "num_uint_with_neg": [[T("v")], [N(2**63)], [N(-1)]],
+    "num_uint_with_error": [[T("v")], [N(2**63)], [E]],
     "num_uint_alone": [[T("v")], [N(2**63)], [N(1)]],
     "txt_long_digits_gap": [[T("t")], [T("9400111899223197428490")], [_]],
     "txt_long_digits_zero": [[T("id")], [T("00012345678901234567890123")]],
@@ -309,9 +315,10 @@ EDGE_CASES = {
 PANDAS3_ONLY = {"date_9999"}
 # Intentionally NOT pandas-identical: pandas parses these digit strings as
 # numbers and loses information (9.400112e+21, dropped leading zeros, inf), so
-# the renderer keeps the text as written. Values are the <td> cells, row-major.
+# the renderer keeps the text as written. Values are the <td> cells, row-major;
+# empty cells are blank under #70 (pandas' na_rep "NaN" -> "").
 DOCUMENTED_DIVERGENCES = {
-    "txt_long_digits_gap": ["9400111899223197428490", "NaN"],
+    "txt_long_digits_gap": ["9400111899223197428490", ""],
     "txt_long_digits_zero": ["00012345678901234567890123"],
     "txt_overflow_exp": ["1e400", "1"],
 }
@@ -330,13 +337,15 @@ def test_edge_cases_match_pandas_reference(monkeypatch, name):
         return
 
     pd = pytest.importorskip("pandas")
+    from markitdown.converters._xlsx_converter import _frame_to_html
+
     if name in PANDAS3_ONLY and int(pd.__version__.split(".")[0]) < 3:
         pytest.skip("pandas 2.x differs here; the renderer follows pandas 3")
     monkeypatch.setattr(xlrd, "open_workbook", lambda *args, **kwargs: book)
 
     def reference():
         sheets = pd.read_excel(io.BytesIO(b"x"), sheet_name=None, engine="xlrd")
-        return sheets["S"].to_html(index=False)
+        return _frame_to_html(sheets["S"])
 
     if name in PANDAS_RAISES:
         with pytest.raises(ValueError):
@@ -350,9 +359,17 @@ def test_formatting_without_pandas_reference(monkeypatch):
     book = FakeBook(
         {
             "One": [
-                [T("int"), T("float"), T("gap"), T("date"), T("when")],
-                [N(1), N(1.5), N(1), D(43831), D(43831.5)],
-                [N(2), N(2.25), _, D(43832), D(43832.75)],
+                [
+                    T("int"),
+                    T("float"),
+                    T("gap"),
+                    T("date"),
+                    T("when"),
+                    T("day"),
+                    T("text"),
+                ],
+                [N(1), N(1.5), N(1), D(43831), D(43831.5), D(43831), T("a")],
+                [N(2), N(2.25), _, D(43832), D(43832.75), _, _],
             ],
             "Empty": [],
             "Two": [[T("only")], [T("x")]],
@@ -360,15 +377,43 @@ def test_formatting_without_pandas_reference(monkeypatch):
     )
     monkeypatch.setattr(xlrd, "open_workbook", lambda *args, **kwargs: book)
     markdown = _convert(b"generated")
+    # Empty cells are blank and whole numbers drop ".0" (#70).
     assert markdown.startswith(
         "## One\n"
-        "| int | float | gap | date | when |\n"
-        "| --- | --- | --- | --- | --- |\n"
-        "| 1 | 1.50 | 1.0 | 2020-01-01 | 2020-01-01 12:00:00 |\n"
-        "| 2 | 2.25 | NaN | 2020-01-02 | 2020-01-02 18:00:00 |\n\n"
+        "| int | float | gap | date | when | day | text |\n"
+        "| --- | --- | --- | --- | --- | --- | --- |\n"
+        "| 1 | 1.50 | 1 | 2020-01-01 | 2020-01-01 12:00:00 | 2020-01-01 | a |\n"
+        "| 2 | 2.25 |  | 2020-01-02 | 2020-01-02 18:00:00 |  |  |\n\n"
         "## Empty\n"
     )
     assert markdown.endswith("## Two\n| only |\n| --- |\n| x |")
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [1.5, 2.25, 3.0],
+        [1.0, float("nan"), 3.0],
+        [1234567.123456, 1.0, 2.0],
+        [1e-7, 1.0, 2.0],
+        [-0.5, -12.0, 0.0],
+        [1 / 3, 1234567.5, 2.0],
+    ],
+)
+def test_float_formatting_core_still_matches_pandas(values):
+    """#70 only overrides empty and whole cells; the rest is pandas' display."""
+    pd = pytest.importorskip("pandas")
+    from bs4 import BeautifulSoup
+
+    from markitdown.converters._xls_table import _format_floats, format_float_cells
+
+    html = pd.DataFrame({"x": values}).to_html(index=False)
+    cells = [td.get_text().strip() for td in BeautifulSoup(html, "html.parser")("td")]
+    assert _format_floats(values) == cells
+    assert format_float_cells(values) == [
+        "" if v != v else str(int(v)) if v.is_integer() else text
+        for v, text in zip(values, cells)
+    ]
 
 
 def test_xls_converts_without_pandas(tmp_path):
