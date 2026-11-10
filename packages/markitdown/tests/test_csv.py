@@ -259,8 +259,10 @@ def test_csv_long_backslash_runs(suffix: str, escaped_suffix: str) -> None:
         StreamInfo(extension=".tsv", charset="utf-8"),
         StreamInfo(extension=".TSV", charset="utf-8"),
         StreamInfo(mimetype="text/tab-separated-values", charset="utf-8"),
+        # The .tsv extension wins over a conflicting mimetype.
+        StreamInfo(extension=".tsv", mimetype="text/csv", charset="utf-8"),
     ],
-    ids=["extension", "uppercase-extension", "mimetype"],
+    ids=["extension", "uppercase-extension", "mimetype", "extension-over-mimetype"],
 )
 def test_tsv_produces_a_table(converter: MarkItDown, stream_info: StreamInfo) -> None:
     result = converter.convert_stream(
@@ -278,6 +280,18 @@ def test_tsv_file_path_produces_a_table(tmp_path) -> None:
     result = MarkItDown(enable_plugins=False).convert(str(path))
 
     assert result.markdown == "| name | age |\n| --- | --- |\n| Alice | 30 |"
+
+
+def test_tsv_reads_excel_style_quoting(converter: MarkItDown) -> None:
+    # Excel's tab-delimited export quotes cells holding tabs, quotes or newlines.
+    result = converter.convert_stream(
+        io.BytesIO(b'name\tnote\n"Smith\tJ"\t"say ""hi""\nbye"\n'),
+        stream_info=StreamInfo(extension=".tsv", charset="utf-8"),
+    )
+
+    assert result.markdown == (
+        '| name | note |\n| --- | --- |\n| Smith\tJ | say "hi" bye |'
+    )
 
 
 def test_csv_tabs_are_not_delimiters(converter: MarkItDown) -> None:

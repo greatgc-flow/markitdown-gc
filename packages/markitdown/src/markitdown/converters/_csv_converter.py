@@ -112,7 +112,9 @@ class CsvConverter(DocumentConverter):
         # it does not end up inside the first header cell.
         content = content.lstrip("\ufeff")
 
-        # Parse CSV content
+        # Parse CSV content. TSV keeps the default quoting on purpose: Excel's
+        # tab-delimited export quotes cells that hold tabs, quotes or newlines
+        # (IANA TSV has no quoting, so a leading quote there opens a cell).
         reader = csv.reader(
             io.StringIO(content, newline=""), delimiter=_delimiter(stream_info)
         )

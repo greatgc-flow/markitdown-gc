@@ -24,25 +24,43 @@ def _convert_html(html: str, **kwargs) -> str:
 _TABLE_BODY = "<tr><td>Name</td><td>Age</td></tr><tr><td>Alice</td><td>30</td></tr>"
 
 
-@pytest.mark.parametrize(
-    "leading",
-    [
-        "<tr><td></td><td></td></tr>",
-        "<tr><td> </td><td>&nbsp;<br></td></tr><tr><td></td><td></td></tr>",
-    ],
-    ids=["one-empty-row", "whitespace-rows"],
-)
-def test_leading_empty_table_rows_are_dropped(leading: str) -> None:
-    expected = _convert_html(f"<table>{_TABLE_BODY}</table>")
-    header = leading.replace("td>", "th>")
+_EMPTY_ROWS = "<tr><td> </td><td>&nbsp;<br></td></tr><tr><td></td><td></td></tr>"
+_EMPTY_HEAD = "<thead><tr><th> </th><th>&nbsp;<br></th></tr></thead>"
+_TH_BODY = "<tr><th>Name</th><th>Age</th></tr><tr><td>Alice</td><td>30</td></tr>"
 
-    assert _convert_html(f"<table>{leading}{_TABLE_BODY}</table>") == expected
-    # An emptied <thead> must not keep the body from supplying the header.
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        f"<tr><td></td><td></td></tr>{_TABLE_BODY}",
+        f"{_EMPTY_ROWS}{_TABLE_BODY}",
+        # An emptied <thead> must not keep the body from supplying the header.
+        f"{_EMPTY_HEAD}<tbody>{_TABLE_BODY}</tbody>",
+        # Before the fix: Name was a data row under a blank header.
+        f"{_EMPTY_ROWS}{_TH_BODY}",
+        # Before the fix: two "| --- |" separator lines.
+        f"{_EMPTY_HEAD}<tbody>{_TH_BODY}</tbody>",
+    ],
+    ids=[
+        "one-empty-row",
+        "whitespace-rows",
+        "empty-thead",
+        "empty-row-then-th-row",
+        "empty-thead-then-th-row",
+    ],
+)
+def test_leading_empty_table_rows_are_dropped(table: str) -> None:
+    # The first row with content takes the empty rows' place as the header.
     assert (
-        _convert_html(
-            f"<table><thead>{header}</thead><tbody>{_TABLE_BODY}</tbody></table>"
-        )
-        == expected
+        _convert_html(f"<table>{table}</table>")
+        == "| Name | Age |\n| --- | --- |\n| Alice | 30 |"
+    )
+
+
+def test_table_without_empty_rows_is_unchanged() -> None:
+    assert (
+        _convert_html(f"<table>{_TABLE_BODY}</table>")
+        == "|  |  |\n| --- | --- |\n| Name | Age |\n| Alice | 30 |"
     )
 
 

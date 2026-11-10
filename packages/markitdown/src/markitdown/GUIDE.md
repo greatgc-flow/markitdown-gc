@@ -18,8 +18,8 @@ Next steps:
 ## formats
 What you actually get (text only, no layout fidelity):
 - PDF: text per page; tables best-effort; scanned pages give NO text (see ocr).
-- DOCX/PPTX: headings, lists, tables, alt text; images are `![alt](file)` or truncated `data:` refs (`--keep-data-uris` keeps them, huge). PPTX has `<!-- Slide number: N -->`.
-- XLSX/XLS/CSV: one table per sheet. XLSX image extraction is opt-in.
+- DOCX/PPTX: headings (DOCX Title/Subtitle → `#`/`##`), lists, tables, alt text; images are `![alt](file)` or truncated `data:` refs (`--keep-data-uris` keeps them, huge). PPTX has `<!-- Slide number: N -->`.
+- XLSX/XLS/CSV/TSV: one table per sheet. XLSX image extraction is opt-in.
 - HWP5/HWPX: text + pipe tables (merged cells flattened), images `[IMAGE]`, footnotes appended; encrypted files unsupported.
 - HTML, EPUB, RSS, IPYNB, JSON/XML/text, ZIP (recursive), MSG: text/structure.
 - Legacy .doc/.ppt/.rtf and HWP < 5.0: opt in with `--libreoffice`, Python `MarkItDown(libreoffice_path="soffice")`, or `SOFFICE_PATH`. Requires local LibreOffice; otherwise unchanged/unsupported. Converts to DOCX/PPTX, then uses the native converter. Output starts `<!-- converted via LibreOffice X.Y from .doc; fidelity=DERIVED -->`: derived text, not native fidelity. Temporary input/output/profile are deleted; original input is unchanged.

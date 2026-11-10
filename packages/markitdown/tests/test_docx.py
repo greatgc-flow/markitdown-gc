@@ -1263,12 +1263,17 @@ _TABLE_ROWS = (_table_row("Name", "Age"), _table_row("Alice", "30"))
     ids=["one-empty-row", "two-empty-rows", "empty-header-row"],
 )
 def test_docx_leading_empty_table_rows_are_dropped(leading: tuple) -> None:
-    expected = DocxConverter().convert(_docx(_table(*_TABLE_ROWS)), _INFO).markdown
-
     result = DocxConverter().convert(_docx(_table(*leading, *_TABLE_ROWS)), _INFO)
 
-    assert result.markdown == expected
-    assert "| Name | Age |" in expected
+    # The first row with content takes the empty row's place as the header.
+    assert result.markdown == "| Name | Age |\n| --- | --- |\n| Alice | 30 |"
+
+
+def test_docx_table_without_empty_rows_is_unchanged() -> None:
+    result = DocxConverter().convert(_docx(_table(*_TABLE_ROWS)), _INFO)
+
+    # Mammoth writes <td> cells, so markdownify adds its usual blank header.
+    assert result.markdown == "|  |  |\n| --- | --- |\n| Name | Age |\n| Alice | 30 |"
 
 
 def test_docx_all_empty_table_is_kept() -> None:
