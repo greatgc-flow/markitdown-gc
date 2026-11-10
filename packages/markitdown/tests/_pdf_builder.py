@@ -61,8 +61,92 @@ def pdf(pages):
             )
         )
     objects[0] = b"<< /Type /Catalog /Pages 2 0 R >>"
+    return _serialize(objects, children)
+
+
+def _escape(text):
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def text_pdf(pages, outline=(), dests=None):
+    """Letter pages of ``(font_size, text)`` lines plus an optional bookmark tree.
+
+    A line's text may be a list of cells, placed in columns on one baseline.
+    ``outline`` holds ``(title, target, children)`` tuples. A str title is
+    written as UTF-16BE, bytes verbatim. ``target`` is a page index, a
+    named-destination string, ``("A", index_or_name)`` for a GoTo action, or
+    None for no destination. ``dests`` maps names to page indexes.
+    """
+    objects = [b"", b"", b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+
+    def add(value=b""):
+        objects.append(value)
+        return len(objects)
+
+    page_ids = []
+    for lines in pages:
+        y = 720
+        commands = []
+        for size, text in lines:
+            cells = text if isinstance(text, list) else [text]
+            for column, cell in enumerate(cells):
+                commands.append(
+                    f"BT /F1 {size} Tf {72 + 180 * column} {y} Td ({_escape(cell)}) Tj ET"
+                )
+            y -= size * 3
+        data = "\n".join(commands).encode("latin-1")
+        content = add(
+            f"<< /Length {len(data)} >>\nstream\n".encode() + data + b"\nendstream"
+        )
+        page_ids.append(
+            add(
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {content} 0 R >>".encode()
+            )
+        )
+
+    def dest(target):
+        if isinstance(target, str):
+            return f"({_escape(target)})"
+        return f"[{page_ids[target]} 0 R /Fit]"
+
+    def build(items, parent):
+        ids = [add() for _ in items]
+        for n, (obj, (title, target, kids)) in enumerate(zip(ids, items)):
+            if isinstance(title, str):
+                title = b"\xfe\xff" + title.encode("utf-16-be")
+            fields = [f"/Title <{title.hex()}>", f"/Parent {parent} 0 R"]
+            if isinstance(target, tuple):
+                fields.append(f"/A << /S /GoTo /D {dest(target[1])} >>")
+            elif target is not None:
+                fields.append(f"/Dest {dest(target)}")
+            if n:
+                fields.append(f"/Prev {ids[n - 1]} 0 R")
+            if n + 1 < len(ids):
+                fields.append(f"/Next {ids[n + 1]} 0 R")
+            if kids:
+                first, last = build(kids, obj)
+                fields.append(f"/First {first} 0 R /Last {last} 0 R /Count {len(kids)}")
+            objects[obj - 1] = ("<< " + " ".join(fields) + " >>").encode()
+        return ids[0], ids[-1]
+
+    catalog = "<< /Type /Catalog /Pages 2 0 R"
+    if outline:
+        root = add()
+        first, last = build(outline, root)
+        objects[root - 1] = (
+            f"<< /Type /Outlines /First {first} 0 R /Last {last} 0 R /Count {len(outline)} >>".encode()
+        )
+        catalog += f" /Outlines {root} 0 R"
+    if dests:
+        pairs = " ".join(f"{dest(n)} {dest(p)}" for n, p in sorted(dests.items()))
+        catalog += f" /Names << /Dests << /Names [{pairs}] >> >>"
+    objects[0] = (catalog + " >>").encode()
+    return _serialize(objects, page_ids)
+
+
+def _serialize(objects, page_ids):
     objects[1] = (
-        f"<< /Type /Pages /Count {len(children)} /Kids [{' '.join(f'{n} 0 R' for n in children)}] >>".encode()
+        f"<< /Type /Pages /Count {len(page_ids)} /Kids [{' '.join(f'{n} 0 R' for n in page_ids)}] >>".encode()
     )
     output = bytearray(b"%PDF-1.4\n")
     offsets = [0]

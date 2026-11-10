@@ -1,6 +1,7 @@
 import sys
 import io
 import re
+import unicodedata
 from typing import BinaryIO, Any
 
 from .._base_converter import DocumentConverter, DocumentConverterResult
@@ -57,11 +58,203 @@ def _merge_partial_numbering_lines(text: str) -> str:
     return "\n".join(result_lines)
 
 
+# Leading section number on a heading line ("2 ", "2.1 ", "3.", "1.概要") that
+# bookmark titles often omit. Years ("2019 ") and decimals ("1.5") are kept.
+SECTION_NUMBER_PREFIX_PATTERN = re.compile(r"^\d{1,2}(?:\.\d{1,3})*(?:\.(?!\d)|\s)\s*")
+
+# Upper bound on outline / name-tree nodes visited, so a hostile file cannot
+# dominate runtime. Bookmarks past the cap are dropped (partial outline).
+_MAX_OUTLINE_NODES = 2000
+
+OutlineEntry = tuple[int, str, int]  # (heading level, title, 0-based page)
+
+
+def _decode_title(raw: Any) -> str:
+    """Decode a PDF text string; pdfminer handles UTF-16BE and PDFDocEncoding."""
+    if not isinstance(raw, bytes):
+        return raw if isinstance(raw, str) else ""
+    for bom, encoding in ((b"\xef\xbb\xbf", "utf-8"), (b"\xff\xfe", "utf-16-le")):
+        if raw.startswith(bom):
+            return raw[len(bom) :].decode(encoding, "replace")
+    return pdfminer.utils.decode_text(raw)
+
+
+def _named_destinations(catalog: dict) -> dict[Any, Any]:
+    """Name -> destination from the PDF 1.1 /Dests dict and the /Names tree."""
+    resolve1 = pdfminer.pdftypes.resolve1
+    named: dict[Any, Any] = {}
+    old = resolve1(catalog.get("Dests"))
+    if isinstance(old, dict):
+        named.update(old)
+    names = resolve1(catalog.get("Names"))
+    stack = [names.get("Dests")] if isinstance(names, dict) else []
+    seen: set[int] = set()
+    while stack and len(seen) < _MAX_OUTLINE_NODES:
+        node = stack.pop()
+        if isinstance(node, pdfminer.pdftypes.PDFObjRef):
+            if node.objid in seen:
+                continue
+            seen.add(node.objid)
+        node = resolve1(node)
+        if not isinstance(node, dict):
+            continue
+        pairs = resolve1(node.get("Names"))
+        if isinstance(pairs, list):
+            for key, value in zip(pairs[::2], pairs[1::2]):
+                key = resolve1(key)
+                if isinstance(key, (str, bytes)):
+                    named.setdefault(key, value)
+        kids = resolve1(node.get("Kids"))
+        if isinstance(kids, list):
+            stack.extend(reversed(kids))
+    return named
+
+
+def _destination_page(
+    node: dict, named: dict[Any, Any], pages: dict[int, int]
+) -> int | None:
+    """0-based page of a bookmark's /Dest or /A GoTo target, else None."""
+    resolve1 = pdfminer.pdftypes.resolve1
+    dest = node.get("Dest")
+    if dest is None:
+        action = resolve1(node.get("A"))
+        if not isinstance(action, dict):
+            return None
+        if getattr(resolve1(action.get("S")), "name", None) != "GoTo":
+            return None
+        dest = action.get("D")
+    dest = resolve1(dest)
+    if isinstance(dest, pdfminer.psparser.PSLiteral):
+        dest = dest.name
+    if isinstance(dest, (str, bytes)):
+        dest = resolve1(named.get(dest))
+    if isinstance(dest, dict):
+        dest = resolve1(dest.get("D"))
+    if isinstance(dest, list) and dest:
+        target = dest[0]
+        if isinstance(target, pdfminer.pdftypes.PDFObjRef):
+            return pages.get(target.objid)
+    return None
+
+
+def _read_outline(pdf_stream: BinaryIO) -> list[OutlineEntry]:
+    """Return ``(level, title, page)`` bookmarks, or ``[]`` if absent or unreadable.
+
+    Only bookmarks with a title and a resolvable page are kept; children of a
+    dropped bookmark take its level. Levels are clamped to Markdown's six.
+    """
+    resolve1 = pdfminer.pdftypes.resolve1
+    entries: list[OutlineEntry] = []
+    try:
+        pdf_stream.seek(0)
+        document = pdfminer.pdfdocument.PDFDocument(
+            pdfminer.pdfparser.PDFParser(pdf_stream)
+        )
+        root = resolve1(document.catalog.get("Outlines"))
+        if not isinstance(root, dict):
+            return []
+        pages = {
+            page.pageid: index
+            for index, page in enumerate(
+                pdfminer.pdfpage.PDFPage.create_pages(document)
+            )
+        }
+        named = _named_destinations(document.catalog)
+
+        # Iterative walk: each node once (shared or cyclic links), node cap.
+        seen: set[int] = set()
+        stack = [(root.get("First"), 1)]
+        while stack and len(seen) < _MAX_OUTLINE_NODES:
+            ref, level = stack.pop()
+            if not isinstance(ref, pdfminer.pdftypes.PDFObjRef) or ref.objid in seen:
+                continue
+            seen.add(ref.objid)
+            node = resolve1(ref)
+            if not isinstance(node, dict):
+                continue
+            title = " ".join(_decode_title(resolve1(node.get("Title"))).split())
+            page = _destination_page(node, named, pages) if title else None
+            if page is not None:
+                entries.append((min(level, 6), title, page))
+            # Push Next first so children are visited before the next sibling.
+            stack.append((node.get("Next"), level))
+            stack.append((node.get("First"), level + (page is not None)))
+    except Exception:
+        # Malformed or encrypted: keep what was read; never fail the conversion.
+        pass
+    return entries
+
+
+def _heading_key(text: str) -> str:
+    """Comparison key: NFKC, case-folded, all whitespace removed."""
+    return "".join(unicodedata.normalize("NFKC", text).casefold().split())
+
+
+def _apply_outline_headings(
+    markdown: str, outline: list[OutlineEntry], first_page: int = 0
+) -> str:
+    """Turn standalone lines that match bookmark titles into Markdown headings.
+
+    A line matches only on its bookmark's page (pdfminer ends each page with
+    a form feed; ``first_page`` is the page of the first line). The whole line
+    (normalized, optionally minus a leading section number) must equal the
+    title; each bookmark marks at most one line, in outline order. Table rows
+    and lines after a lone partial number (".1") are never promoted.
+    """
+    if not outline:
+        return markdown
+
+    wanted: dict[tuple[int, str], list[int]] = {}
+    for level, title, page in outline:
+        key = _heading_key(title)
+        if key:
+            wanted.setdefault((page, key), []).append(level)
+
+    breaks_seen = 0
+    previous = ""
+    lines = markdown.split("\n")
+    for line_index, line in enumerate(lines):
+        indent = line[: len(line) - len(line.lstrip())]
+        page = first_page + breaks_seen + indent.count("\f")
+        breaks_seen += line.count("\f")
+        text = " ".join(line.split())
+        if not text:
+            continue
+        after_partial_number = PARTIAL_NUMBERING_PATTERN.match(previous)
+        previous = text
+        if text.startswith("|") or after_partial_number:
+            continue
+
+        normalized = unicodedata.normalize("NFKC", text)
+        for candidate in (
+            normalized,
+            SECTION_NUMBER_PREFIX_PATTERN.sub("", normalized, count=1),
+        ):
+            levels = wanted.get((page, _heading_key(candidate)))
+            if levels:
+                break
+        else:
+            continue
+
+        # Keep a leading form feed on its own line so the heading starts at
+        # column 0.
+        page_break = "\f\n" if "\f" in indent else ""
+        lines[line_index] = f"{page_break}{'#' * levels.pop(0)} {text}"
+
+    return "\n".join(lines)
+
+
 # Load dependencies
 _dependency_exc_info = None
 try:
     import pdfminer
     import pdfminer.high_level
+    import pdfminer.pdfdocument
+    import pdfminer.pdfpage
+    import pdfminer.pdfparser
+    import pdfminer.pdftypes
+    import pdfminer.psparser
+    import pdfminer.utils
     import pdfplumber
 except ImportError:
     _dependency_exc_info = sys.exc_info()
@@ -497,6 +690,7 @@ class PdfConverter(DocumentConverter):
     Converts PDFs to Markdown.
     Supports extracting tables into aligned Markdown format (via pdfplumber).
     Falls back to pdfminer if pdfplumber is missing or fails.
+    Lines matching the PDF outline (bookmarks) become Markdown headings.
     """
 
     def accepts(
@@ -539,6 +733,11 @@ class PdfConverter(DocumentConverter):
         # Read file stream into BytesIO for compatibility with pdfplumber
         pdf_bytes = io.BytesIO(file_stream.read())
 
+        # Born-digital PDFs often carry bookmarks; use them as heading structure.
+        outline = _read_outline(pdf_bytes)
+        pdf_bytes.seek(0)
+        headings_applied = False
+
         has_images = False
         try:
             # Single pass: check every page for form-style content.
@@ -558,12 +757,16 @@ class PdfConverter(DocumentConverter):
                     if page_content is not None:
                         form_page_count += 1
                         if page_content.strip():
-                            markdown_chunks.append(page_content)
+                            markdown_chunks.append(
+                                _apply_outline_headings(page_content, outline, page_idx)
+                            )
                     else:
                         plain_page_indices.append(page_idx)
                         text = page.extract_text()
                         if text and text.strip():
-                            markdown_chunks.append(text.strip())
+                            markdown_chunks.append(
+                                _apply_outline_headings(text.strip(), outline, page_idx)
+                            )
 
                     page.close()  # Free cached page data immediately
 
@@ -573,7 +776,9 @@ class PdfConverter(DocumentConverter):
                 pdf_bytes.seek(0)
                 markdown = pdfminer.high_level.extract_text(pdf_bytes)
             else:
+                # Chunks already carry headings for their own pages.
                 markdown = "\n\n".join(markdown_chunks).strip()
+                headings_applied = True
 
         except Exception:
             # Fallback if pdfplumber fails
@@ -584,6 +789,11 @@ class PdfConverter(DocumentConverter):
         if not markdown:
             pdf_bytes.seek(0)
             markdown = pdfminer.high_level.extract_text(pdf_bytes)
+            headings_applied = False
+
+        # pdfminer text: pages end with form feeds, which locate each bookmark.
+        if not headings_applied:
+            markdown = _apply_outline_headings(markdown, outline)
 
         # Post-process to merge MasterFormat-style partial numbering with following text
         markdown = _merge_partial_numbering_lines(markdown)

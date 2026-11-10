@@ -17,7 +17,7 @@ Next steps:
 
 ## formats
 What you actually get (text only, no layout fidelity):
-- PDF: text per page; tables best-effort; scanned pages give NO text (see ocr).
+- PDF: text per page; tables best-effort; lines matching bookmarks (outline) on their target page become `#` headings (not with the ocr plugin); scanned pages give NO text (see ocr).
 - DOCX/PPTX: headings (DOCX Title/Subtitle → `#`/`##`), lists, tables, alt text; images are `![alt](file)` or truncated `data:` refs (`--keep-data-uris` keeps them, huge). PPTX has `<!-- Slide number: N -->`.
 - XLSX/XLS/CSV/TSV: one table per sheet. XLSX image extraction is opt-in.
 - HWP5/HWPX: text + pipe tables (merged cells flattened), images `[IMAGE]`, footnotes appended; encrypted files unsupported.
