@@ -13,7 +13,7 @@ MarkItDown is a lightweight Python utility for converting various files to Markd
 
 MarkItDown currently supports the conversion from:
 
-- PDF
+- PDF (bookmarks become headings)
 - PowerPoint
 - Word
 - HWP/HWPX (included in `[all]`, also available as `[hwp]`)
