@@ -111,6 +111,7 @@ The DOCX, PPTX, and XLSX converters subclass their core counterparts and overrid
 - Embedded images are extracted by position (via `page.images` / page XObjects) and OCR'd inline, interleaved with the surrounding text in vertical reading order.
 - **Scanned PDFs** (pages with no extractable text) are detected automatically: each page is rendered at 300 DPI and sent to the LLM as a full-page image.
 - **Malformed PDFs** that pdfplumber/pdfminer cannot open (e.g. truncated EOF) are retried with PyMuPDF page rendering, so content is still recovered.
+- Bookmark (outline) headings from the core PDF converter are not applied: with the plugin enabled, PDF output has no `#` headings from bookmarks.
 
 ### DOCX
 

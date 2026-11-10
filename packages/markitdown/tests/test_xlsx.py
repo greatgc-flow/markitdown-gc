@@ -3,6 +3,7 @@
 import inspect
 import io
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Optional
 from unittest.mock import Mock
@@ -467,6 +468,36 @@ def test_missing_dependencies_and_legacy_xls_stay_separate(
 
 
 # Conversion regressions
+
+
+def test_empty_cells_are_blank_and_whole_numbers_drop_point_zero() -> None:
+    """Issue #70: no NaN/NaT for empty cells, no ".0" on whole numbers."""
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Data"
+    sheet.append(["id", "price", "name", "when"])
+    sheet.append([12, 1.5, "a", datetime(2020, 1, 1)])
+    sheet.append([None, 2.25, None, None])
+    sheet.append([3, 3, "c", datetime(2020, 1, 2)])
+    stream = io.BytesIO()
+    workbook.save(stream)
+    workbook.close()
+
+    markdown = _convert(XlsxConverter(), stream.getvalue())
+
+    assert markdown.splitlines()[0] == "## Data"
+    rows = [
+        [cell.strip() for cell in line.strip("|").split("|")]
+        for line in markdown.splitlines()[1:]
+    ]
+    # Genuine non-integer floats keep pandas' column formatting ("1.50").
+    assert rows == [
+        ["id", "price", "name", "when"],
+        ["---"] * 4,
+        ["12", "1.50", "a", "2020-01-01"],
+        ["", "2.25", "", ""],
+        ["3", "3", "c", "2020-01-02"],
+    ]
 
 
 def test_xlsx_legacy_show_zeroes_sheetview(tmp_path) -> None:

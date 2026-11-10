@@ -72,18 +72,14 @@ def test_xls_mismatch(data, expected, fmt):
     ],
 )
 def test_xls_binary_is_not_recovered(data, monkeypatch):
-    from types import SimpleNamespace
     from markitdown.converters import _xlsx_converter as module
 
-    def read_excel(stream, **kwargs):
+    def read_xls_sheets(stream):
         assert stream.tell() == 0
-        assert kwargs["engine"] == "xlrd"
         raise LookupError("native reader reached")
 
     monkeypatch.setattr(module, "_xls_dependency_exc_info", None)
-    monkeypatch.setattr(
-        module, "pd", SimpleNamespace(read_excel=read_excel), raising=False
-    )
+    monkeypatch.setattr(module, "_read_xls_sheets", read_xls_sheets)
     with warnings.catch_warnings(record=True) as caught:
         with pytest.raises(LookupError, match="native reader reached"):
             XlsConverter().convert(io.BytesIO(data), StreamInfo(extension=".xls"))
@@ -91,7 +87,6 @@ def test_xls_binary_is_not_recovered(data, monkeypatch):
 
 
 def test_xls_sniff_is_bounded_and_does_not_route_xlsm(monkeypatch):
-    from types import SimpleNamespace
     from markitdown.converters import _xlsx_converter as module
 
     class PrefixOnly(io.BytesIO):
@@ -99,14 +94,12 @@ def test_xls_sniff_is_bounded_and_does_not_route_xlsm(monkeypatch):
             assert size == 8192
             return super().read(size)
 
-    def read_excel(stream, **kwargs):
+    def read_xls_sheets(stream):
         assert stream.tell() == 4
         raise LookupError("native reader reached")
 
     monkeypatch.setattr(module, "_xls_dependency_exc_info", None)
-    monkeypatch.setattr(
-        module, "pd", SimpleNamespace(read_excel=read_excel), raising=False
-    )
+    monkeypatch.setattr(module, "_read_xls_sheets", read_xls_sheets)
     for extension, data in [(".xls", b"binary"), (".xlsm", b"<html>text")]:
         stream = PrefixOnly(b"skip" + data)
         stream.seek(4)
