@@ -35,15 +35,14 @@ def test_tolerant_xls_decode_is_scoped(monkeypatch, fail):
         return workbook
 
     monkeypatch.setattr(xlrd, "open_workbook", open_workbook)
-    original_read = _xlsx_converter.pd.read_excel
+    original_render = _xlsx_converter.sheet_to_html
 
-    def read_excel(*args, **kwargs):
+    def sheet_to_html(*args, **kwargs):
+        # The tolerant decoder is scoped to open_workbook, not sheet rendering.
         assert all(module.unicode is original for module, original in originals.items())
-        result = original_read(*args, **kwargs)
-        assert all(module.unicode is original for module, original in originals.items())
-        return result
+        return original_render(*args, **kwargs)
 
-    monkeypatch.setattr(_xlsx_converter.pd, "read_excel", read_excel)
+    monkeypatch.setattr(_xlsx_converter, "sheet_to_html", sheet_to_html)
     data = (Path(__file__).parent / "test_files" / "test.xls").read_bytes()
     try:
         if fail:

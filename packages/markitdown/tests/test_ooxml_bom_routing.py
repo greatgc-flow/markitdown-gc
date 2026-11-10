@@ -87,15 +87,13 @@ class OoxmlRoutingTests(unittest.TestCase):
                     reader = Mock(side_effect=ValueError("native cause"))
                     with patch.object(
                         module, "_xls_dependency_exc_info", None
-                    ), patch.object(
-                        module, "pd", SimpleNamespace(read_excel=reader), create=True
-                    ):
+                    ), patch.object(module, "_read_xls_sheets", reader):
                         with warnings.catch_warnings(record=True) as caught:
                             with self.assertRaisesRegex(ValueError, "native cause"):
                                 module.XlsConverter().convert(
                                     stream, StreamInfo(extension=extension)
                                 )
-                    self.assertEqual(reader.call_args.kwargs["engine"], "xlrd")
+                    self.assertIs(reader.call_args.args[0], stream)
                     self.assertFalse(caught)
                     self.assertEqual(stream.tell(), 4)
 
