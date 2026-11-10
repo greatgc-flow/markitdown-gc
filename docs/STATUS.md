@@ -1,6 +1,10 @@
 # Project Status
 
-Current version: **0.3.8** (see [`__about__.py`](../packages/markitdown/src/markitdown/__about__.py)).
+Current version: **0.3.9** (see [`__about__.py`](../packages/markitdown/src/markitdown/__about__.py)).
+
+Changes in 0.3.9:
+
+- PDF (bug fix, follow-up to #68/#75): with an outline (bookmarks), the output now keeps exactly the same form-feed (`\f`) page breaks as the same PDF without bookmarks, including after empty/scanned pages. 0.3.8 put the `\f` of a promoted heading on its own line, which the per-line `rstrip` applied to every converter result then deleted, so page structure was lost. A promoted heading now carries its page's `\f` as a prefix on the same line (`\f# Title`); splitting the text at `\f` yields one piece per page.
 
 Changes in 0.3.8:
 

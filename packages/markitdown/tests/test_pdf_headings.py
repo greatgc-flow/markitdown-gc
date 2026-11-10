@@ -56,7 +56,7 @@ def test_outline_titles_become_headings():
     assert "## Background" in lines
     # A heading at the top of page 2 (after pdfminer's form feed) keeps the
     # section number that the bookmark title omits.
-    assert "# 2 Methods" in markdown.split("\n")
+    assert "\f# 2 Methods" in markdown.split("\n")
     # Body lines that merely mention a title are not promoted.
     assert BODY in lines
     assert "We describe the Methods used and the Background again." in lines
@@ -103,11 +103,9 @@ def test_contents_page_does_not_consume_bookmarks():
         "Contents",
         "1 Introduction",
         "2 Methods",
-        "\f",
-        "# 1 Introduction",
+        "\f# 1 Introduction",
         "Text",
-        "\f",
-        "# 2 Methods",
+        "\f# 2 Methods",
     ]
 
 
@@ -292,3 +290,55 @@ def test_form_pages_get_headings_per_page():
     assert "\f" not in markdown
     assert any(line.startswith("| Item") for line in _lines(markdown))
     assert _headings(markdown) == ["# Introduction", "# 2 Methods"]
+
+
+def _page_breaks_pdf(outline, first_page_empty=False):
+    pages = [
+        [(20, "Chapter One"), (11, "Alpha text on the first page.")],
+        [(20, "Chapter Two"), (11, "Beta text on the second page.")],
+        [(20, "Chapter Three"), (11, "Gamma text on the third page.")],
+    ]
+    if first_page_empty:
+        pages.insert(0, [])
+    return text_pdf(pages, outline)
+
+
+def test_page_breaks_survive_outline_headings():
+    outline = [("Chapter One", 0, []), ("Chapter Two", 1, []), ("Chapter Three", 2, [])]
+    with_outline = _convert(_page_breaks_pdf(outline)).markdown
+    without = _convert(_page_breaks_pdf(())).markdown
+
+    assert without.count("\f") == 2
+    assert with_outline.count("\f") == without.count("\f")
+    pieces = with_outline.split("\f")
+    assert len(pieces) == 3
+    for piece, title, body in zip(
+        pieces,
+        ("Chapter One", "Chapter Two", "Chapter Three"),
+        ("Alpha", "Beta", "Gamma"),
+    ):
+        assert piece.strip().startswith(f"# {title}")
+        assert body in piece
+        assert len(_headings(piece)) == 1
+
+
+def test_leading_empty_page_keeps_its_page_break():
+    outline = [("Chapter One", 1, []), ("Chapter Two", 2, []), ("Chapter Three", 3, [])]
+    with_outline = _convert(_page_breaks_pdf(outline, first_page_empty=True)).markdown
+    plain = _convert(_page_breaks_pdf((), first_page_empty=True)).markdown
+
+    assert plain.count("\f") == 3
+    assert with_outline.count("\f") == 3
+    pieces = with_outline.split("\f")
+    assert len(pieces) == 4
+    assert not pieces[0].strip()
+    assert pieces[1].strip().startswith("# Chapter One")
+    assert pieces[2].strip().startswith("# Chapter Two")
+    assert pieces[3].strip().startswith("# Chapter Three")
+
+
+def test_heading_keeps_form_feed_in_the_same_line():
+    # No line may be a form feed alone: MarkItDown's per-line rstrip drops it.
+    result = _apply_outline_headings("Text\n\fIntro\nBody", [(1, "Intro", 1)])
+    assert result == "Text\n\f# Intro\nBody"
+    assert all(line.rstrip() for line in result.split("\n"))
