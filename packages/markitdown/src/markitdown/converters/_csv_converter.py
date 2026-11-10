@@ -6,11 +6,13 @@ from charset_normalizer import from_bytes
 from .._base_converter import DocumentConverter, DocumentConverterResult
 from .._stream_info import StreamInfo
 
+TSV_MIME_TYPE_PREFIX = "text/tab-separated-values"
 ACCEPTED_MIME_TYPE_PREFIXES = [
     "text/csv",
     "application/csv",
+    TSV_MIME_TYPE_PREFIX,
 ]
-ACCEPTED_FILE_EXTENSIONS = [".csv"]
+ACCEPTED_FILE_EXTENSIONS = [".csv", ".tsv"]
 
 
 # Matches a pipe together with the (possibly empty) run of backslashes in front
@@ -27,6 +29,17 @@ def _escape_table_cell(value: str) -> str:
     """
     value = _PIPE_ESCAPE_RE.sub(lambda m: m.group(1) * 2 + r"\|", value)
     return value.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+
+
+def _delimiter(stream_info: StreamInfo) -> str:
+    """Use tabs for TSV input; a .csv extension wins over a conflicting mimetype."""
+    extension = (stream_info.extension or "").lower()
+    mimetype = (stream_info.mimetype or "").lower()
+    if extension == ".tsv" or (
+        extension != ".csv" and mimetype.startswith(TSV_MIME_TYPE_PREFIX)
+    ):
+        return "\t"
+    return ","
 
 
 def _trim_outer_blank_rows(rows: list[list[str]]) -> None:
@@ -56,7 +69,7 @@ def _trim_outer_blank_rows(rows: list[list[str]]) -> None:
 
 class CsvConverter(DocumentConverter):
     """
-    Converts CSV files to Markdown tables.
+    Converts CSV and TSV files to Markdown tables.
     """
 
     def __init__(self):
@@ -99,8 +112,12 @@ class CsvConverter(DocumentConverter):
         # it does not end up inside the first header cell.
         content = content.lstrip("\ufeff")
 
-        # Parse CSV content
-        reader = csv.reader(io.StringIO(content, newline=""))
+        # Parse CSV content. TSV keeps the default quoting on purpose: Excel's
+        # tab-delimited export quotes cells that hold tabs, quotes or newlines
+        # (IANA TSV has no quoting, so a leading quote there opens a cell).
+        reader = csv.reader(
+            io.StringIO(content, newline=""), delimiter=_delimiter(stream_info)
+        )
         rows = list(reader)
         _trim_outer_blank_rows(rows)
 

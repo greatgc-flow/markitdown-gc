@@ -29,6 +29,8 @@ class _CustomMarkdownify(markdownify.MarkdownConverter):
     - Removing javascript hyperlinks.
     - Truncating images with large data:uri sources.
     - Ensuring URIs are properly escaped, and do not conflict with Markdown syntax
+    - Dropping fully empty rows at the top of tables; the first row with content
+      becomes the header
     """
 
     def __init__(self, **options: Any):
@@ -175,4 +177,39 @@ class _CustomMarkdownify(markdownify.MarkdownConverter):
         return self.convert_s(el, text, *args, **kwargs)  # type: ignore
 
     def convert_soup(self, soup: Any) -> str:
+        for table in soup.find_all("table"):
+            _drop_leading_empty_rows(table)
         return super().convert_soup(soup)  # type: ignore
+
+
+def _drop_leading_empty_rows(table: Any) -> None:
+    """Drop the fully empty rows at the top of a table and make the first row
+    with content the header. A table with no content is kept as is.
+    """
+    empty_rows = []
+    # Lazy: the scan usually stops at the first row.
+    rows = (tag for tag in table.descendants if getattr(tag, "name", None) == "tr")
+    for first_row in rows:
+        if first_row.find_parent("table") is not table:
+            continue  # A nested table's row
+        # Other embedded content (svg, video, ...) renders as nothing anyway.
+        if (
+            first_row.get_text(strip=True)
+            or first_row.find(["img", "input"]) is not None
+        ):
+            break
+        empty_rows.append(first_row)
+    else:
+        return
+    if not empty_rows:
+        return
+
+    for row in empty_rows:
+        section = row.parent
+        row.decompose()
+        # An emptied <thead> would still stop the body supplying the header.
+        if section is not table and section.find("tr") is None:
+            section.decompose()
+    # Without <th>, markdownify would add a blank header above this row.
+    for cell in first_row.find_all(["td", "th"], recursive=False):
+        cell.name = "th"

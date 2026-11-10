@@ -485,7 +485,12 @@ def _paragraph(content: str) -> str:
 _BODY = _paragraph(_text("Before") + _image() + _text("After"))
 
 
-def _docx(body: str = _BODY, *, embedded_style_map: Optional[str] = None) -> io.BytesIO:
+def _docx(
+    body: str = _BODY,
+    *,
+    embedded_style_map: Optional[str] = None,
+    styles: Optional[str] = None,
+) -> io.BytesIO:
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, "w") as archive:
         archive.writestr(
@@ -525,6 +530,12 @@ def _docx(body: str = _BODY, *, embedded_style_map: Optional[str] = None) -> io.
         )
         archive.writestr("word/media/image.png", _PNG)
         archive.writestr("word/media/image.gif", _GIF)
+        if styles is not None:
+            # Mammoth falls back to word/styles.xml without a relationship.
+            archive.writestr(
+                "word/styles.xml",
+                f'<w:styles xmlns:w="{WORD_NAMESPACE}">{styles}</w:styles>',
+            )
     if embedded_style_map is not None:
         stream.seek(0)
         mammoth.embed_style_map(stream, embedded_style_map)
@@ -1172,6 +1183,105 @@ def test_docx_caller_style_map_overrides_embedded_style_map(tmp_path) -> None:
     result = MarkItDown(style_map="u => strong").convert(docx_file)
 
     assert "plain **underlined**" in result.markdown
+
+
+def _styled_paragraph(style_id: str, text: str) -> str:
+    return _paragraph(f'<w:pPr><w:pStyle w:val="{style_id}"/></w:pPr>' + _text(text))
+
+
+def _paragraph_style(style_id: str, name: str) -> str:
+    return (
+        f'<w:style w:type="paragraph" w:styleId="{style_id}">'
+        f'<w:name w:val="{name}"/></w:style>'
+    )
+
+
+@pytest.mark.parametrize(
+    ("style_id", "name", "heading"),
+    [
+        ("Title", None, "# "),
+        ("Title", "Title", "# "),
+        # Localized Word versions translate the style ID, not the built-in name.
+        ("Titel", "Title", "# "),
+        ("Subtitle", None, "## "),
+        ("Untertitel", "Subtitle", "## "),
+    ],
+)
+def test_docx_title_styles_become_headings(
+    style_id: str, name: Optional[str], heading: str
+) -> None:
+    source = _docx(
+        _styled_paragraph(style_id, "Report") + _paragraph(_text("Body")),
+        styles=None if name is None else _paragraph_style(style_id, name),
+    )
+
+    result = DocxConverter().convert(source, _INFO)
+
+    assert result.markdown.splitlines()[0] == heading + "Report"
+    assert result.markdown.splitlines()[-1] == "Body"
+
+
+def test_docx_caller_style_map_overrides_title_heading() -> None:
+    source = _docx(
+        _styled_paragraph("Title", "Report"),
+        styles=_paragraph_style("Title", "Title"),
+    )
+
+    result = DocxConverter().convert(
+        source, _INFO, style_map="p[style-name='Title'] => p:fresh"
+    )
+
+    assert result.markdown == "Report"
+
+
+def _table_cell(text: str) -> str:
+    return "<w:tc>" + _paragraph(_text(text) if text else "") + "</w:tc>"
+
+
+def _table_row(*cells: str, header: bool = False) -> str:
+    properties = "<w:trPr><w:tblHeader/></w:trPr>" if header else ""
+    return f"<w:tr>{properties}" + "".join(map(_table_cell, cells)) + "</w:tr>"
+
+
+def _table(*rows: str) -> str:
+    grid = "<w:gridCol/>" * 2
+    return f"<w:tbl><w:tblPr/><w:tblGrid>{grid}</w:tblGrid>{''.join(rows)}</w:tbl>"
+
+
+_TABLE_ROWS = (_table_row("Name", "Age"), _table_row("Alice", "30"))
+
+
+@pytest.mark.parametrize(
+    "leading",
+    [
+        (_table_row("", ""),),
+        (_table_row("", ""), _table_row(" ", "")),
+        # Word marks a repeating header row with w:tblHeader; mammoth turns it
+        # into <thead>, which must not linger once its only row is dropped.
+        (_table_row("", "", header=True),),
+    ],
+    ids=["one-empty-row", "two-empty-rows", "empty-header-row"],
+)
+def test_docx_leading_empty_table_rows_are_dropped(leading: tuple) -> None:
+    result = DocxConverter().convert(_docx(_table(*leading, *_TABLE_ROWS)), _INFO)
+
+    # The first row with content takes the empty row's place as the header.
+    assert result.markdown == "| Name | Age |\n| --- | --- |\n| Alice | 30 |"
+
+
+def test_docx_table_without_empty_rows_is_unchanged() -> None:
+    result = DocxConverter().convert(_docx(_table(*_TABLE_ROWS)), _INFO)
+
+    # Mammoth writes <td> cells, so markdownify adds its usual blank header.
+    assert result.markdown == "|  |  |\n| --- | --- |\n| Name | Age |\n| Alice | 30 |"
+
+
+def test_docx_all_empty_table_is_kept() -> None:
+    result = DocxConverter().convert(
+        _docx(_table(_table_row("", ""), _table_row("", ""))), _INFO
+    )
+
+    assert "| --- | --- |" in result.markdown
 
 
 def test_docx_equations() -> None:
