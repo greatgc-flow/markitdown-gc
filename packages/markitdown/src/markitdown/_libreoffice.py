@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
@@ -155,9 +156,36 @@ def _kill_tree(child: subprocess.Popen, job=None) -> None:
     child.wait(timeout=10)
 
 
+_VERSION = re.compile(r"LibreOffice\s+(\d+(?:\.\d+)+)")
+
+
+def _command(executable: str, profile: Path) -> list[str]:
+    """Headless soffice invocation bound to an isolated, hardened profile."""
+    return [
+        executable,
+        "-env:UserInstallation=" + profile.as_uri(),
+        "--headless",
+        "--norestore",
+        "--nodefault",
+        "--nofirststartwizard",
+        "--nolockcheck",
+    ]
+
+
 def _execute(args: list[str], *, cwd: Path, timeout_s: float, output: Path) -> str:
+    returncode, text = _run(
+        args, cwd=cwd, timeout_s=timeout_s, output=output, label="LibreOffice"
+    )
+    if returncode:
+        raise OSError("LibreOffice failed")
+    return text
+
+
+def _run(
+    args: list[str], *, cwd: Path, timeout_s: float, output: Path, label: str
+) -> tuple[int, str]:
     try:
-        return _capture(args, cwd=cwd, timeout_s=timeout_s, output=output)
+        return _capture(args, cwd=cwd, timeout_s=timeout_s, output=output, label=label)
     finally:
         # Windows can signal process death just before closing its inherited
         # file handles. Retry only this owned capture, with a bounded deadline.
@@ -172,7 +200,9 @@ def _execute(args: list[str], *, cwd: Path, timeout_s: float, output: Path) -> s
                 time.sleep(0.02)
 
 
-def _capture(args: list[str], *, cwd: Path, timeout_s: float, output: Path) -> str:
+def _capture(
+    args: list[str], *, cwd: Path, timeout_s: float, output: Path, label: str
+) -> tuple[int, str]:
     """Bound both process lifetime and captured output without inherited pipe readers."""
     with output.open("w+b") as stream:
         job = _WindowsJob() if os.name == "nt" else None
@@ -193,10 +223,9 @@ def _capture(args: list[str], *, cwd: Path, timeout_s: float, output: Path) -> s
                 deadline = time.monotonic() + timeout_s
                 while child.poll() is None:
                     if time.monotonic() >= deadline or output.stat().st_size > 65536:
-                        raise TimeoutError("LibreOffice deadline/output limit exceeded")
+                        raise TimeoutError(f"{label} deadline/output limit exceeded")
                     time.sleep(0.02)
-                if child.returncode:
-                    raise OSError("LibreOffice failed")
+                returncode = child.returncode
             finally:
                 _kill_tree(child, job)
         finally:
@@ -205,4 +234,4 @@ def _capture(args: list[str], *, cwd: Path, timeout_s: float, output: Path) -> s
                 if "child" in locals() and child.poll() is not None:
                     child._handle.Close()
         stream.seek(0)
-        return stream.read(65536).decode("utf-8", errors="replace")
+        return returncode, stream.read(65536).decode("utf-8", errors="replace")

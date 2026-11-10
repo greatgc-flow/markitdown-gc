@@ -381,6 +381,21 @@ print(result.markdown)
 
 If any attempt succeeds, image conversion continues normally. If the client raises an error after exhausting its retries, or encounters a non-retryable error, MarkItDown tries other applicable converters and raises `FileConversionException` only if none succeeds.
 
+#### Tool probes and installation check (`markitdown.tools`)
+
+`markitdown.tools` is the stable API for integrators; do not import underscore modules such as `markitdown._libreoffice` or `markitdown._installation`, which may change without notice.
+
+```python
+from markitdown import tools
+
+tools.installation_conflict()  # None, or a fix message if upstream markitdown is co-installed
+tools.probe_libreoffice()      # {"path": ..., "version": "25.2.1.2", "status": "ok", "detail": None}
+tools.probe_exiftool()         # status: "ok" | "missing" | "outdated" (< 12.24) | "error"
+tools.run_tool([exe, "-ver"], timeout=10)  # subprocess.CompletedProcess, stdout+stderr merged
+```
+
+Probes use the same discovery as conversion (`SOFFICE_PATH` or `soffice`; `EXIFTOOL_PATH` or `exiftool` in a system directory), never raise for a missing or broken tool, and return JSON-serializable dicts with `path`, `version`, `status` and `detail`. `run_tool` applies the LibreOffice converter's containment: closed stdin, allowlisted environment, 64 KiB output cap, deadline (`TimeoutError`) and whole-process-tree termination. Non-zero exit codes are returned, not raised.
+
 ### Docker
 
 ```sh

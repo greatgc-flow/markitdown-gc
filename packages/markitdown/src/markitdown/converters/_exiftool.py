@@ -1,10 +1,40 @@
 import json
+import os
+import shutil
 import subprocess
-from typing import Any, BinaryIO, Union
+from typing import Any, BinaryIO, Optional, Union
+
+# exiftool < 12.24 is vulnerable to CVE-2021-22204.
+MIN_VERSION = (12, 24)
+
+_TRUSTED_DIRS = (
+    "/usr/bin",
+    "/usr/local/bin",
+    "/opt",
+    "/opt/bin",
+    "/opt/local/bin",
+    "/opt/homebrew/bin",
+    "C:\\Windows\\System32",
+    "C:\\Program Files",
+    "C:\\Program Files (x86)",
+)
 
 
 def _parse_version(version: str) -> tuple:
     return tuple(map(int, (version.split("."))))
+
+
+def _discover_exiftool() -> Optional[str]:
+    """EXIFTOOL_PATH (even empty, meaning disabled), else exiftool in a trusted dir."""
+    configured = os.getenv("EXIFTOOL_PATH")
+    if configured is not None:
+        return configured
+    candidate = shutil.which("exiftool")
+    if candidate:
+        candidate = os.path.abspath(candidate)
+        if os.path.dirname(candidate) in _TRUSTED_DIRS:
+            return candidate
+    return None
 
 
 def exiftool_metadata(
@@ -25,8 +55,7 @@ def exiftool_metadata(
             check=True,
         ).stdout.strip()
         version = _parse_version(version_output)
-        min_version = (12, 24)
-        if version < min_version:
+        if version < MIN_VERSION:
             raise RuntimeError(
                 f"ExifTool version {version_output} is vulnerable to CVE-2021-22204. "
                 "Please upgrade to version 12.24 or later."
