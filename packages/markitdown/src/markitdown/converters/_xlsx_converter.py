@@ -9,6 +9,7 @@ from typing import BinaryIO, Any, Iterator, Optional
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 from ._html_converter import HtmlConverter
+from ._xls_table import sheet_to_html
 from .._base_converter import DocumentConverter, DocumentConverterResult
 from .._exceptions import MissingDependencyException, MISSING_DEPENDENCY_MESSAGE
 from .._stream_info import StreamInfo
@@ -23,10 +24,10 @@ try:
 except ImportError:
     _xlsx_dependency_exc_info = sys.exc_info()
 
+# XLS reads through xlrd directly; pandas is not needed (#63).
 _xls_dependency_exc_info = None
 try:
-    import pandas as pd  # noqa: F811
-    import xlrd  # noqa: F401
+    import xlrd
 except ImportError:
     _xls_dependency_exc_info = sys.exc_info()
 
@@ -261,8 +262,11 @@ class XlsxConverter(DocumentConverter):
         return None
 
 
-def _read_xls_sheets(file_stream: BinaryIO) -> dict[str, Any]:
-    """Tolerate damaged UTF-16 only while xlrd eagerly loads the workbook."""
+def _read_xls_sheets(file_stream: BinaryIO) -> list[tuple[str, str]]:
+    """Return (sheet name, HTML table) pairs read with xlrd.
+
+    Damaged UTF-16 is tolerated only while xlrd eagerly loads the workbook.
+    """
     originals = {
         module: module.unicode
         for name, module in list(sys.modules.items())
@@ -284,23 +288,20 @@ def _read_xls_sheets(file_stream: BinaryIO) -> dict[str, Any]:
             ).count("\ufffd")
             return text
 
-    original_open = xlrd.open_workbook
-
-    def open_workbook(*args: Any, **kwargs: Any) -> Any:
-        try:
-            for module in originals:
-                module.unicode = tolerant_unicode
-            kwargs["on_demand"] = False
-            return original_open(*args, **kwargs)
-        finally:
-            for module, original in originals.items():
-                module.unicode = original
-
     try:
-        xlrd.open_workbook = open_workbook
-        sheets = pd.read_excel(file_stream, sheet_name=None, engine="xlrd")
+        for module in originals:
+            module.unicode = tolerant_unicode
+        book = xlrd.open_workbook(file_contents=file_stream.read(), on_demand=False)
     finally:
-        xlrd.open_workbook = original_open
+        for module, original in originals.items():
+            module.unicode = original
+    try:
+        sheets = [
+            (name, sheet_to_html(book.sheet_by_name(name), book.datemode))
+            for name in book.sheet_names()
+        ]
+    finally:
+        book.release_resources()
     if replaced:
         warnings.warn(
             f"Replaced {replaced} invalid UTF-16 sequence(s) in XLS strings with U+FFFD. Verify output.",
@@ -397,11 +398,9 @@ class XlsConverter(DocumentConverter):
                 _xls_dependency_exc_info[2]
             )
 
-        sheets = _read_xls_sheets(file_stream)
         md_content = ""
-        for s in sheets:
+        for s, html_content in _read_xls_sheets(file_stream):
             md_content += f"## {s}\n"
-            html_content = sheets[s].to_html(index=False)
             md_content += (
                 self._html_converter.convert_string(
                     html_content, **kwargs
