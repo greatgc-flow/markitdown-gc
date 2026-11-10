@@ -236,9 +236,10 @@ def _apply_outline_headings(
         else:
             continue
 
-        # Keep a leading form feed on its own line so the heading starts at
-        # column 0.
-        page_break = "\f\n" if "\f" in indent else ""
+        # Keep the page's form feeds as a prefix of the same line: a line of
+        # only "\f" would be stripped by the per-line rstrip every converter
+        # result goes through, losing the page break.
+        page_break = "\f" * indent.count("\f")
         lines[line_index] = f"{page_break}{'#' * levels.pop(0)} {text}"
 
     return "\n".join(lines)
