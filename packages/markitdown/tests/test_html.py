@@ -21,6 +21,57 @@ def _convert_html(html: str, **kwargs) -> str:
     return result.markdown
 
 
+_TABLE_BODY = "<tr><td>Name</td><td>Age</td></tr><tr><td>Alice</td><td>30</td></tr>"
+
+
+@pytest.mark.parametrize(
+    "leading",
+    [
+        "<tr><td></td><td></td></tr>",
+        "<tr><td> </td><td>&nbsp;<br></td></tr><tr><td></td><td></td></tr>",
+    ],
+    ids=["one-empty-row", "whitespace-rows"],
+)
+def test_leading_empty_table_rows_are_dropped(leading: str) -> None:
+    expected = _convert_html(f"<table>{_TABLE_BODY}</table>")
+    header = leading.replace("td>", "th>")
+
+    assert _convert_html(f"<table>{leading}{_TABLE_BODY}</table>") == expected
+    # An emptied <thead> must not keep the body from supplying the header.
+    assert (
+        _convert_html(
+            f"<table><thead>{header}</thead><tbody>{_TABLE_BODY}</tbody></table>"
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("first_cell", "rendered"),
+    [
+        ('<img src="a.png" alt="logo">', "logo"),
+        ('<input type="checkbox" checked>', "[x]"),
+    ],
+)
+def test_leading_table_rows_with_content_are_kept(
+    first_cell: str, rendered: str
+) -> None:
+    markdown = _convert_html(
+        f"<table><tr><td>{first_cell}</td><td></td></tr>{_TABLE_BODY}</table>"
+    )
+
+    assert rendered in markdown
+    assert markdown != _convert_html(f"<table>{_TABLE_BODY}</table>")
+
+
+def test_all_empty_table_is_kept() -> None:
+    markdown = _convert_html(
+        "<table><tr><td></td><td></td></tr><tr><td></td><td></td></tr></table>"
+    )
+
+    assert "| --- | --- |" in markdown
+
+
 @pytest.mark.parametrize(
     "whitespace", ["", " ", "  ", "\t", "\n", "\r\n", "\u00a0", " \t\n\u00a0 "]
 )
