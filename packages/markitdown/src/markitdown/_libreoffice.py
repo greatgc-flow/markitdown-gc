@@ -185,7 +185,9 @@ def _run(
     args: list[str], *, cwd: Path, timeout_s: float, output: Path, label: str
 ) -> tuple[int, str]:
     try:
-        return _capture(args, cwd=cwd, timeout_s=timeout_s, output=output, label=label)
+        return _capture_status(
+            args, cwd=cwd, timeout_s=timeout_s, output=output, label=label
+        )
     finally:
         # Windows can signal process death just before closing its inherited
         # file handles. Retry only this owned capture, with a bounded deadline.
@@ -200,7 +202,17 @@ def _run(
                 time.sleep(0.02)
 
 
-def _capture(
+def _capture(args: list[str], *, cwd: Path, timeout_s: float, output: Path) -> str:
+    """Pre-tools shape kept for existing callers: raise on a non-zero exit."""
+    returncode, text = _capture_status(
+        args, cwd=cwd, timeout_s=timeout_s, output=output, label="LibreOffice"
+    )
+    if returncode:
+        raise OSError("LibreOffice failed")
+    return text
+
+
+def _capture_status(
     args: list[str], *, cwd: Path, timeout_s: float, output: Path, label: str
 ) -> tuple[int, str]:
     """Bound both process lifetime and captured output without inherited pipe readers."""
@@ -225,6 +237,9 @@ def _capture(
                     if time.monotonic() >= deadline or output.stat().st_size > 65536:
                         raise TimeoutError(f"{label} deadline/output limit exceeded")
                     time.sleep(0.02)
+                # A fast child can exit before any poll sees the file grow.
+                if output.stat().st_size > 65536:
+                    raise TimeoutError(f"{label} deadline/output limit exceeded")
                 returncode = child.returncode
             finally:
                 _kill_tree(child, job)

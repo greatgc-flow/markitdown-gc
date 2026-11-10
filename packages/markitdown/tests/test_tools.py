@@ -13,14 +13,20 @@ from markitdown import tools
 KEYS = {"path", "version", "status", "detail"}
 
 
-def _fake_tool(directory: Path, name: str, stdout: str, code: int = 0) -> Path:
+def _fake_tool(
+    directory: Path, name: str, stdout: str, code: int = 0, stderr: str = ""
+) -> Path:
     """A real executable (resolvable by shutil.which) that prints ``stdout``."""
     if os.name == "nt":
         script = directory / f"{name}.cmd"
-        script.write_text(f"@echo {stdout}\r\n@exit /b {code}\r\n", encoding="ascii")
+        warn = f"@echo {stderr} 1>&2\r\n" if stderr else ""
+        script.write_text(
+            f"{warn}@echo {stdout}\r\n@exit /b {code}\r\n", encoding="ascii"
+        )
     else:
         script = directory / name
-        script.write_text(f"#!/bin/sh\necho '{stdout}'\nexit {code}\n")
+        warn = f"echo '{stderr}' >&2\n" if stderr else ""
+        script.write_text(f"#!/bin/sh\n{warn}echo '{stdout}'\nexit {code}\n")
         script.chmod(0o755)
     return script
 
@@ -36,8 +42,25 @@ def test_public_surface_and_private_delegates_remain():
     ]
     assert tools.installation_conflict is _installation.installation_conflict
     # Private names stay importable for existing callers during migration.
-    for name in ("_execute", "_resolve", "_write_profile"):
+    for name in ("_capture", "_execute", "_resolve", "_write_profile"):
         assert callable(getattr(_libreoffice, name))
+    assert not hasattr(tools, "PathLike")  # type alias is private
+    assert "provisional" in tools.run_tool.__doc__.lower()
+
+
+def test_private_capture_keeps_str_shape(tmp_path):
+    from markitdown import _libreoffice as lo
+
+    ok = [sys.executable, "-c", "print('hi')"]
+    out = lo._capture(ok, cwd=tmp_path, timeout_s=30, output=tmp_path / "a.log")
+    assert out.strip() == "hi"
+    with pytest.raises(OSError, match="LibreOffice failed"):
+        lo._capture(
+            [sys.executable, "-c", "raise SystemExit(1)"],
+            cwd=tmp_path,
+            timeout_s=30,
+            output=tmp_path / "b.log",
+        )
 
 
 def test_run_tool_returns_completed_process_and_cleans_up(monkeypatch):
@@ -80,6 +103,13 @@ def test_run_tool_timeout_and_validation():
             tools.run_tool([sys.executable, "-V"], timeout=timeout)
     with pytest.raises(OSError):
         tools.run_tool(["no-such-tool-markitdown-gc"], timeout=5)
+
+
+def test_run_tool_output_limit_applies_after_fast_exit():
+    # Exits before the first poll can see the file grow: must not truncate.
+    burst = [sys.executable, "-c", "import sys; sys.stdout.write('x' * 70000)"]
+    with pytest.raises(TimeoutError, match="output limit"):
+        tools.run_tool(burst, timeout=30)
 
 
 def test_probe_libreoffice_ok(monkeypatch):
@@ -147,6 +177,33 @@ def test_probe_exiftool(tmp_path, stdout, code, status, version):
     assert result["version"] == version
     assert Path(result["path"]).resolve() == fake.resolve()
     assert (result["detail"] is None) == (status == "ok")
+
+
+def test_probe_exiftool_ignores_stderr_warning(tmp_path):
+    # e.g. Perl's locale warning; the version is the last line of output.
+    warning = "perl: warning: Setting locale failed."
+    fake = _fake_tool(tmp_path, "exiftool", "13.10", stderr=warning)
+    result = tools.probe_exiftool(fake)
+    assert result["status"] == "ok" and result["version"] == "13.10"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows paths are case-insensitive")
+def test_probe_exiftool_discovery_is_case_insensitive(tmp_path, monkeypatch):
+    # PATH spells C:\WINDOWS\system32 while the trusted list has C:\Windows\System32.
+    from markitdown import MarkItDown
+    from markitdown.converters import _exiftool
+
+    fake = _fake_tool(tmp_path, "exiftool", "13.10")
+    which = _exiftool.shutil.which
+    monkeypatch.delenv("EXIFTOOL_PATH", raising=False)
+    monkeypatch.setattr(_exiftool, "_TRUSTED_DIRS", (str(tmp_path).upper(),))
+    monkeypatch.setattr(
+        _exiftool.shutil,
+        "which",
+        lambda cmd, *a, **k: str(fake) if cmd == "exiftool" else which(cmd, *a, **k),
+    )
+    assert MarkItDown()._exiftool_path == str(fake)
+    assert tools.probe_exiftool()["status"] == "ok"
 
 
 def test_probe_exiftool_discovery_matches_markitdown(tmp_path, monkeypatch):

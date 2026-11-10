@@ -32,7 +32,9 @@ def _discover_exiftool() -> Optional[str]:
     candidate = shutil.which("exiftool")
     if candidate:
         candidate = os.path.abspath(candidate)
-        if os.path.dirname(candidate) in _TRUSTED_DIRS:
+        # Windows PATH may spell C:\WINDOWS\system32 (upstream #2837).
+        trusted = {os.path.normcase(d) for d in _TRUSTED_DIRS}
+        if os.path.normcase(os.path.dirname(candidate)) in trusted:
             return candidate
     return None
 

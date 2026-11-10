@@ -1,7 +1,9 @@
-"""Stable public API for external-tool probes and installation checks.
+"""Public API for external-tool probes and installation checks.
 
-Everything in ``__all__`` is a supported interface: names, parameters and the
-keys of returned dictionaries change only with a deprecation period. Modules
+``installation_conflict``, ``probe_libreoffice`` and ``probe_exiftool`` are
+stable: names, parameters and the keys of returned dictionaries change only
+with a deprecation period. ``run_tool`` is provisional and may change without
+one (see its docstring). Modules
 whose names start with an underscore (``markitdown._libreoffice``,
 ``markitdown._installation`` ...) remain private and may change at any time.
 
@@ -35,7 +37,7 @@ __all__ = [
     "run_tool",
 ]
 
-PathLike = Union[str, os.PathLike]
+_PathLike = Union[str, os.PathLike]
 
 
 def _result(path=None, version=None, status="ok", detail=None) -> dict:
@@ -48,12 +50,17 @@ def _check_timeout(timeout: float) -> None:
 
 
 def run_tool(
-    argv: Sequence[PathLike],
+    argv: Sequence[_PathLike],
     *,
     timeout: float,
-    cwd: Optional[PathLike] = None,
+    cwd: Optional[_PathLike] = None,
 ) -> "subprocess.CompletedProcess[str]":
     """Run a local tool with the same containment as the LibreOffice converter.
+
+    Provisional, not part of the stable surface: the fixed environment
+    allowlist, 64 KiB cap, merged stderr and ``TimeoutError`` for an oversized
+    output may change (e.g. new ``env``/``max_output`` parameters or a distinct
+    overflow error) without a deprecation period.
 
     - stdin is closed; stdout and stderr are merged into ``stdout`` (UTF-8,
       undecodable bytes replaced) and capped at 64 KiB; ``stderr`` is ``None``.
@@ -85,7 +92,7 @@ def run_tool(
     return subprocess.CompletedProcess(args, returncode, output, None)
 
 
-def probe_libreoffice(path: Optional[PathLike] = None, *, timeout: float = 60) -> dict:
+def probe_libreoffice(path: Optional[_PathLike] = None, *, timeout: float = 60) -> dict:
     """Locate LibreOffice and read its version the way the converter would.
 
     ``path`` defaults to ``SOFFICE_PATH``, else ``soffice`` on PATH (the same
@@ -123,7 +130,7 @@ def probe_libreoffice(path: Optional[PathLike] = None, *, timeout: float = 60) -
     return _result(executable, match[1])
 
 
-def probe_exiftool(path: Optional[PathLike] = None, *, timeout: float = 10) -> dict:
+def probe_exiftool(path: Optional[_PathLike] = None, *, timeout: float = 10) -> dict:
     """Locate exiftool and check that it is at least 12.24.
 
     ``path`` defaults to the rule ``MarkItDown()`` uses: ``EXIFTOOL_PATH``
@@ -146,7 +153,9 @@ def probe_exiftool(path: Optional[PathLike] = None, *, timeout: float = 10) -> d
         completed = run_tool([executable, "-ver"], timeout=timeout)
     except OSError as exc:  # includes TimeoutError
         return _result(executable, status="error", detail=str(exc))
-    version = completed.stdout.strip()
+    # stderr is merged; warnings (e.g. Perl locale) precede the version line.
+    lines = completed.stdout.strip().splitlines()
+    version = lines[-1].strip() if lines else ""
     if completed.returncode:
         return _result(
             executable,

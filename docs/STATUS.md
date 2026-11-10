@@ -9,7 +9,7 @@ Changes in 0.3.7:
 
 Unreleased:
 
-- Public, stable `markitdown.tools` API (`installation_conflict`, `probe_libreoffice`, `probe_exiftool`, `run_tool`) so MarkItDown-Flow (`cli.py`, `exiftool.py`, `core_guard.py`) stops importing private `markitdown._libreoffice` / `markitdown._installation`. The private functions are unchanged and still work; downstream should migrate before they are renamed.
+- Public `markitdown.tools` API (stable `installation_conflict`, `probe_libreoffice`, `probe_exiftool`; provisional `run_tool`) so MarkItDown-Flow (`cli.py`, `exiftool.py`, `core_guard.py`) stops importing private `markitdown._libreoffice` / `markitdown._installation`. The private functions are unchanged and still work; downstream should migrate before they are renamed.
 
 ## Release recipe
 
