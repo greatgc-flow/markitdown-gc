@@ -331,6 +331,8 @@ def test_get_content_disposition_filename_decodes_rfc5987() -> None:
 
 
 def test_speech_transcription_uses_https(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("speech_recognition")
+    pytest.importorskip("pydub")
     from speech_recognition.recognizers import google
 
     requests_sent = []
