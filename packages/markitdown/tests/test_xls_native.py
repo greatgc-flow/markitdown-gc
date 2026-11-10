@@ -1,10 +1,12 @@
 """XLS reads through xlrd directly, without pandas (issue #63).
 
 The pandas reference below is the pre-#63 XLS pipeline, verbatim. While pandas
-is installed, every case must stay byte-identical to it.
+is installed, every case must stay byte-identical to it, except the explicit
+DOCUMENTED_DIVERGENCES where pandas loses information.
 """
 
 import io
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +16,7 @@ import xlrd
 
 from markitdown import StreamInfo
 from markitdown.converters import HtmlConverter, XlsConverter
+from markitdown.converters._xls_table import sheet_to_html
 
 FIXTURE = Path(__file__).parent / "test_files" / "test.xls"
 NAN_ERROR = 0x2A  # #N/A
@@ -267,6 +270,80 @@ def test_fixture_matches_pandas_reference():
 def test_generated_workbooks_match_pandas_reference(monkeypatch, book):
     monkeypatch.setattr(xlrd, "open_workbook", lambda *args, **kwargs: book)
     assert _convert(b"generated") == _pandas_reference(b"generated")
+
+
+# Edge cases from the PR #72 review, compared as HTML (stricter than Markdown).
+# The target is pandas 3.x; PANDAS3_ONLY cases differ on pandas 2.x.
+EDGE_CASES = {
+    "hdr_newline": [
+        [T("First\nName"), T("Tab\there"), T("trail\n")],
+        [T("x"), T("y"), T("z")],
+    ],
+    "hdr_all_dates": [[D(43831), D(43862)], [N(1), N(2)]],
+    "hdr_all_dates_ms": [[D(43831.5 + _ms(0.25)), D(43862)], [N(1), N(2)]],
+    "hdr_date_and_error": [[D(43831), E], [N(1), N(2)]],
+    "hdr_float_labels": [[N(0.5), N(0.75)], [N(1), N(2)]],
+    "hdr_float_and_int": [[N(1.5), N(2)], [N(1), N(2)]],
+    "hdr_float_long": [[T("k"), N(1 / 3)], [T("a"), N(1)]],
+    "hdr_float_tiny": [[T("k"), N(1e-7)], [T("a"), N(1)]],
+    "hdr_error_cell": [[T("a"), E], [N(1), N(2)]],
+    "hdr_bom": [[T("﻿Name"), T("b")], [T("x"), N(1)]],
+    "hdr_bom_quoted": [[T('﻿"Na"me'), T("b")], [T("x"), N(1)]],
+    "hdr_bom_only": [[T("﻿"), T("b")], [T("x"), N(1)]],
+    "num_ge_2_64": [[T("v")], [N(1e20)], [N(1)]],
+    "num_avogadro": [[T("v")], [N(6.02214076e23)]],
+    "num_neg_lt_int64": [[T("v")], [N(-1e19)], [N(1)]],
+    "num_uint_with_gap": [[T("v")], [N(2**63)], [_]],
+    "num_uint_with_neg": [[T("v")], [N(2**63)], [N(-1)]],
+    "num_uint_alone": [[T("v")], [N(2**63)], [N(1)]],
+    "txt_long_digits_gap": [[T("t")], [T("9400111899223197428490")], [_]],
+    "txt_long_digits_zero": [[T("id")], [T("00012345678901234567890123")]],
+    "txt_overflow_exp": [[T("v")], [T("1e400")], [N(1)]],
+    "txt_nul_suffix": [[T("v")], [T("1.5\x00x")], [N(2)]],
+    "txt_nul_int": [[T("v")], [T("1\x00x")], [N(2)]],
+    "bool_int_mix": [[T("v")], [B(1)], [N(2)]],
+    "bool_float_mix": [[T("v")], [B(1)], [N(2.5)]],
+    "date_9999": [[T("d")], [D(2958465)], [D(43831)]],
+}
+# pandas 2.x keeps dates outside the ns range as objects ("9999-12-31 00:00:00").
+PANDAS3_ONLY = {"date_9999"}
+# Intentionally NOT pandas-identical: pandas parses these digit strings as
+# numbers and loses information (9.400112e+21, dropped leading zeros, inf), so
+# the renderer keeps the text as written. Values are the <td> cells, row-major.
+DOCUMENTED_DIVERGENCES = {
+    "txt_long_digits_gap": ["9400111899223197428490", "NaN"],
+    "txt_long_digits_zero": ["00012345678901234567890123"],
+    "txt_overflow_exp": ["1e400", "1"],
+}
+# pandas raises "substring not found" on an unclosed quote after the BOM; the
+# renderer only has to produce a table (it keeps the quote and drops the BOM).
+PANDAS_RAISES = {"hdr_bom_unclosed_quote": [[T('﻿"Name'), T("b")], [T("x")]]}
+
+
+@pytest.mark.parametrize("name", list(EDGE_CASES) + list(PANDAS_RAISES))
+def test_edge_cases_match_pandas_reference(monkeypatch, name):
+    book = FakeBook({"S": EDGE_CASES.get(name) or PANDAS_RAISES[name]})
+    rendered = sheet_to_html(book.sheet_by_name("S"), book.datemode)
+    if name in DOCUMENTED_DIVERGENCES:
+        cells = re.findall(r"<td>(.*?)</td>", rendered)
+        assert cells == DOCUMENTED_DIVERGENCES[name]
+        return
+
+    pd = pytest.importorskip("pandas")
+    if name in PANDAS3_ONLY and int(pd.__version__.split(".")[0]) < 3:
+        pytest.skip("pandas 2.x differs here; the renderer follows pandas 3")
+    monkeypatch.setattr(xlrd, "open_workbook", lambda *args, **kwargs: book)
+
+    def reference():
+        sheets = pd.read_excel(io.BytesIO(b"x"), sheet_name=None, engine="xlrd")
+        return sheets["S"].to_html(index=False)
+
+    if name in PANDAS_RAISES:
+        with pytest.raises(ValueError):
+            reference()
+        assert '<th>"Name</th>' in rendered
+    else:
+        assert rendered == reference()
 
 
 def test_formatting_without_pandas_reference(monkeypatch):

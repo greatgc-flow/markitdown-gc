@@ -4,6 +4,9 @@ The output reproduces what ``pandas.read_excel(engine="xlrd")`` followed by
 ``DataFrame.to_html(index=False)`` produced, so XLS Markdown stays unchanged
 without pandas: first row as header, pandas' default NA strings, per-column
 type inference, and pandas' display formatting for numbers and dates.
+
+One deliberate exception: text that pandas would coerce into a lossy number
+(digit strings beyond int64/uint64, floats that overflow to inf) stays text.
 """
 
 import datetime
@@ -27,6 +30,8 @@ _NUMBER_TEXT = re.compile(
     r"[ \t\n\v\f\r]*[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[ \t\n\v\f\r]*"
 )
 _DECIMAL = re.compile(r"^\s*[\+-]?[0-9]+\.[0-9]*$")
+_INT64_MAX = 2**63 - 1
+_INT_RANGE = range(-(2**63), 2**64)  # int64 or uint64
 
 
 def _is_nan(value: Any) -> bool:
@@ -76,10 +81,22 @@ def _number(value: Any) -> Any:
     if isinstance(value, str):
         if value in _NA_TEXT:
             return _NAN
-        if _NUMBER_TEXT.fullmatch(value):
-            return float(value) if any(c in value for c in ".eE") else int(value)
-        return _INF_TEXT.get(value.lower())
-    if isinstance(value, (int, float)):
+        if "\x00" in value:
+            return None  # pandas keeps text containing a NUL as text
+        if not _NUMBER_TEXT.fullmatch(value):
+            return _INF_TEXT.get(value.lower())
+        # Deliberate divergence from pandas, which turns the next two kinds of
+        # text into lossy numbers (inf, rounded floats, dropped leading zeros):
+        # overflowing floats and digit strings beyond int64/uint64 stay text.
+        if any(c in value for c in ".eE"):
+            number = float(value)
+            return None if math.isinf(number) else number
+        return int(value) if int(value) in _INT_RANGE else None
+    if isinstance(value, int) and not isinstance(value, bool):
+        # Number cells beyond int64/uint64 make pandas keep the column as
+        # objects, so they print as full integers (and the rest via str()).
+        return value if value in _INT_RANGE else None
+    if isinstance(value, (bool, float)):
         return value
     return None
 
@@ -141,6 +158,12 @@ def _format_object(value: Any) -> str:
 def _format_column(values: list[Any]) -> list[str]:
     numbers = [_number(v) for v in values]
     if None not in numbers:
+        ints = [n for n in numbers if type(n) is int]
+        if any(n > _INT64_MAX for n in ints) and (
+            any(n < 0 for n in ints) or any(_is_nan(n) for n in numbers)
+        ):
+            # pandas' uint64 conflict: the raw cells are kept, blanks included.
+            return [_format_object(v) for v in values]
         if any(isinstance(n, float) for n in numbers):
             return _format_floats([float(n) for n in numbers])
         if all(isinstance(n, bool) for n in numbers):
@@ -163,13 +186,27 @@ def _format_column(values: list[Any]) -> list[str]:
     return [_format_object(v) for v in values]
 
 
+def _strip_bom(row: list[Any]) -> list[Any]:
+    """Drop a BOM at the start of A1 (and quotes right after it), like pandas."""
+    if not row or not isinstance(row[0], str) or not row[0].startswith("﻿"):
+        return row
+    first = row[0][1:]
+    if first[:1] == '"' and '"' in first[1:]:  # pandas raises when unclosed
+        end = first.index('"', 1)
+        first = first[1:end] + first[end + 1 :]
+    return [first] + row[1:]
+
+
 def _format_labels(labels: list[Any]) -> list[str]:
-    numeric = all(type(v) in (int, float) for v in labels)
-    if numeric and any(isinstance(v, float) for v in labels):
-        return _format_floats([float(v) for v in labels])
-    if labels and all(isinstance(v, datetime.datetime) for v in labels):
-        return _format_datetimes(labels)
-    return [_format_object(v) for v in labels]
+    # to_html prints str() of each label of the inferred columns Index,
+    # without the \t \n \r escaping that body cells get.
+    if all(type(v) in (int, float) for v in labels):
+        if any(type(v) is float for v in labels):
+            labels = [float(v) for v in labels]  # float64 Index
+    elif any(isinstance(v, datetime.datetime) for v in labels):
+        if all(isinstance(v, datetime.datetime) or _is_nan(v) for v in labels):
+            labels = ["NaT" if _is_nan(v) else v for v in labels]  # DatetimeIndex
+    return [str(v) for v in labels]
 
 
 def sheet_to_html(sheet: Any, datemode: int) -> str:
@@ -179,7 +216,7 @@ def sheet_to_html(sheet: Any, datemode: int) -> str:
     for r in range(sheet.nrows):
         cells = zip(sheet.row_values(r), sheet.row_types(r))
         rows.append([_cell(value, ctype, datemode) for value, ctype in cells])
-    header = _column_names(rows[0]) if rows else []
+    header = _column_names(_strip_bom(rows[0])) if rows else []
     body = rows[1:]
     columns = [_format_column([row[j] for row in body]) for j in range(len(header))]
 
