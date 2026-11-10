@@ -173,10 +173,6 @@ MP3_TEST_EXIFTOOL = {
     reason="do not run if exiftool is not installed",
 )
 def test_markitdown_exiftool(monkeypatch: pytest.MonkeyPatch) -> None:
-    import speech_recognition as sr
-
-    # Decode audio locally, but avoid the remote speech service in metadata tests.
-    monkeypatch.setattr(sr.Recognizer, "recognize_google", lambda *args, **kwargs: "")
     which_exiftool = shutil.which("exiftool")
     assert which_exiftool is not None
 
@@ -195,11 +191,56 @@ def test_markitdown_exiftool(monkeypatch: pytest.MonkeyPatch) -> None:
         target = f"{key}: {JPG_TEST_EXIFTOOL[key]}"
         assert target in result.text_content
 
-    # Test some other media types
-    result = markitdown.convert(os.path.join(TEST_FILES_DIR, "test.mp3"))
+
+# pydub shells out to ffmpeg/ffprobe to decode mp3 before transcription.
+skip_ffmpeg = shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None
+
+
+@pytest.mark.skipif(
+    skip_exiftool or skip_ffmpeg,
+    reason="do not run if exiftool, ffmpeg or ffprobe is not installed",
+)
+def test_markitdown_exiftool_audio(monkeypatch: pytest.MonkeyPatch) -> None:
+    import speech_recognition as sr
+
+    # Decode audio locally, but avoid the remote speech service in metadata tests.
+    monkeypatch.setattr(sr.Recognizer, "recognize_google", lambda *args, **kwargs: "")
+    which_exiftool = shutil.which("exiftool")
+    assert which_exiftool is not None
+    monkeypatch.setenv("EXIFTOOL_PATH", which_exiftool)
+
+    result = MarkItDown().convert(os.path.join(TEST_FILES_DIR, "test.mp3"))
     for key in MP3_TEST_EXIFTOOL:
         target = f"{key}: {MP3_TEST_EXIFTOOL[key]}"
         assert target in result.text_content
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        FileNotFoundError(2, "The system cannot find the file specified"),
+        OSError("ffprobe failed"),
+    ],
+)
+def test_audio_transcription_oserror_keeps_metadata(
+    error: OSError, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing ffmpeg/ffprobe must not discard the exiftool metadata."""
+    import markitdown.converters._audio_converter as audio_module
+
+    monkeypatch.setattr(
+        audio_module,
+        "exiftool_metadata",
+        MagicMock(return_value={"Title": "Song title", "SampleRate": 48000}),
+    )
+    transcribe = MagicMock(side_effect=error)
+    monkeypatch.setattr(audio_module, "transcribe_audio", transcribe)
+
+    result = MarkItDown().convert(os.path.join(TEST_FILES_DIR, "test.mp3"))
+
+    assert result.markdown == "Title: Song title\nSampleRate: 48000"
+    assert "Audio Transcript" not in result.markdown
+    transcribe.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
