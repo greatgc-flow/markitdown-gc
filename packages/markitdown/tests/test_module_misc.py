@@ -4,6 +4,7 @@ import io
 import json
 import ntpath
 import os
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -333,6 +334,10 @@ def test_get_content_disposition_filename_decodes_rfc5987() -> None:
 def test_speech_transcription_uses_https(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("speech_recognition")
     pytest.importorskip("pydub")
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip(
+            "pydub needs ffmpeg/ffprobe; without them the transcript is skipped (#74)"
+        )
     from speech_recognition.recognizers import google
 
     requests_sent = []
