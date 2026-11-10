@@ -40,7 +40,8 @@ dependencies = [
   "hwp-hwpx-parser>=1.0,<1.1",
   "python-pptx",
   "mammoth>=1.12.2,<2",
-  # pandas<4: XLS reading relies on xlrd via pandas; migrate before pandas 4 (#63).
+  # pandas<4: XLSX still reads through pandas (openpyxl engine); XLS reads xlrd
+  # directly since #63. Lift the cap once XLSX is validated on pandas 4.
   "pandas<4",
   "openpyxl",
   "xlrd",
@@ -64,7 +65,7 @@ all = [
   "pdfplumber>=0.11.9",
   "olefile",
   "pydub",
-  "SpeechRecognition",
+  "SpeechRecognition>=3.10.4",
   "youtube-transcript-api~=1.2.3; python_full_version < '3.15'",
   "azure-ai-documentintelligence",
   "azure-ai-contentunderstanding>=1.2.0b1",
@@ -74,10 +75,10 @@ pptx = ["python-pptx"]
 hwp = ["hwp-hwpx-parser>=1.0,<1.1"]
 docx = ["mammoth>=1.12.2,<2", "lxml"]
 xlsx = ["pandas<4", "openpyxl"]
-xls = ["pandas<4", "xlrd"]
+xls = ["xlrd"]
 pdf = ["pdfminer.six>=20251230", "pdfplumber>=0.11.9"]
 outlook = ["olefile"]
-audio-transcription = ["pydub", "SpeechRecognition"]
+audio-transcription = ["pydub", "SpeechRecognition>=3.10.4"]
 youtube-transcription = ["youtube-transcript-api~=1.2.3; python_full_version < '3.15'"]
 az-doc-intel = ["azure-ai-documentintelligence", "azure-identity"]
 # >=1.2.0b1 required for to_llm_input() helper used by ContentUnderstandingConverter

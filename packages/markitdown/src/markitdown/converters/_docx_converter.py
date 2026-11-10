@@ -29,6 +29,15 @@ ACCEPTED_FILE_EXTENSIONS = [".docx"]
 
 _UNDERLINE_STYLE_MAP = "u => u"
 
+# Mammoth maps Heading 1-6 by default, but not Title or Subtitle. Match by both
+# style ID and name, like mammoth's own heading rules: localized Word versions
+# translate the ID (e.g. "Titel") but keep the built-in English name.
+_TITLE_STYLE_MAP = """\
+p.Title => h1:fresh
+p[style-name='Title'] => h1:fresh
+p.Subtitle => h2:fresh
+p[style-name='Subtitle'] => h2:fresh"""
+
 
 def _read_embedded_style_map(file_stream: BinaryIO) -> Optional[str]:
     """Read the style map embedded in a .docx, if it has one."""
@@ -107,6 +116,7 @@ class DocxConverter(HtmlConverter):
                 caller_style_map,
                 embedded_style_map,
                 _UNDERLINE_STYLE_MAP,
+                _TITLE_STYLE_MAP,
             )
             if part
         )

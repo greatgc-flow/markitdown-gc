@@ -18,14 +18,16 @@ MarkItDown currently supports the conversion from:
 - Word
 - HWP/HWPX (included in `[all]`, also available as `[hwp]`)
 - Excel
-- Images (EXIF metadata and OCR)
+- Images (EXIF metadata and captioning)
 - Audio (EXIF metadata and speech transcription)
 - HTML
-- Text-based formats (CSV, JSON, XML)
+- Text-based formats (CSV, TSV, JSON, XML)
 - ZIP files (iterates over contents)
 - YouTube URLs
 - EPubs
 - ... and more!
+
+NOTE: Image captioning and speech transcription rely on web-hosted services.
 
 ## Why Markdown?
 
@@ -381,6 +383,21 @@ print(result.markdown)
 
 If any attempt succeeds, image conversion continues normally. If the client raises an error after exhausting its retries, or encounters a non-retryable error, MarkItDown tries other applicable converters and raises `FileConversionException` only if none succeeds.
 
+#### Tool probes and installation check (`markitdown.tools`)
+
+`markitdown.tools` is the public API for integrators; do not import underscore modules such as `markitdown._libreoffice` or `markitdown._installation`, which may change without notice. `installation_conflict`, `probe_libreoffice` and `probe_exiftool` are stable; `run_tool` is provisional and may change without a deprecation period.
+
+```python
+from markitdown import tools
+
+tools.installation_conflict()  # None, or a fix message if upstream markitdown is co-installed
+tools.probe_libreoffice()      # {"path": ..., "version": "25.2.1.2", "status": "ok", "detail": None}
+tools.probe_exiftool()         # status: "ok" | "missing" | "outdated" (< 12.24) | "error"
+tools.run_tool([exe, "-ver"], timeout=10)  # provisional; CompletedProcess, stdout+stderr merged
+```
+
+Probes use the same discovery as conversion (`SOFFICE_PATH` or `soffice`; `EXIFTOOL_PATH` or `exiftool` in a system directory), never raise for a missing or broken tool, and return JSON-serializable dicts with `path`, `version`, `status` and `detail`. `run_tool` applies the LibreOffice converter's containment: closed stdin, allowlisted environment, 64 KiB output cap, deadline (`TimeoutError`) and whole-process-tree termination. Non-zero exit codes are returned, not raised.
+
 ### Docker
 
 ```sh
@@ -482,6 +499,8 @@ MarkItDown performs I/O with the privileges of the current process. Like `open()
 **Sanitize your inputs:** Do not pass untrusted input directly to MarkItDown. If any part of the input may be controlled by an untrusted user or system, such as in hosted or server-side applications, it must be validated and restricted before calling MarkItDown. Depending on your environment, this may include restricting file paths, limiting URI schemes and network destinations, and blocking access to private, loopback, link-local, or metadata-service addresses.
 
 **Call only the conversion method you need:** Prefer the narrowest conversion API that fits your use case. MarkItDown's `convert()` method is intentionally permissive and can handle local files, remote URIs, and byte streams. If your application only needs to read local files, call `convert_local()` instead. If you need more control over URI fetching, call `requests.get()` yourself and pass the response object to `convert_response()`. For maximum control, open a stream to the input you want converted and call `convert_stream()`.
+
+Additionally, image captioning, speech transcription, Azure Document Intelligence, and Azure Content Understanding rely on web-hosted services to function. For local-only operations, install only the optional dependencies that you need and want to use.
 
 ## Trademarks
 
