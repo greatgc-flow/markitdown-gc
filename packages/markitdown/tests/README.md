@@ -46,6 +46,10 @@ hatch test
 ```
 
 Running `python -m pytest` directly requires an editable install (`pip install -e .` from this directory); `hatch test` is the canonical runner.
+Do not run the tests from source with `PYTHONPATH=src` in an environment that has another
+`markitdown-gc` release installed: the co-install guard compares the installed metadata with
+the loaded source version, reports a conflict and makes the CLI tests fail (#80). Use
+`hatch test` or an editable install of this checkout instead.
 
 To run a single format:
 
