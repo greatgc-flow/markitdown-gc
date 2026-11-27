@@ -48,6 +48,7 @@ dependencies = [
   "lxml",
   "pdfminer.six>=20251230",
   "pdfplumber>=0.11.9",
+  "pypdfium2>=5.15.2,<6",
   "olefile",
 ]
 
@@ -63,6 +64,7 @@ all = [
   "lxml",
   "pdfminer.six>=20251230",
   "pdfplumber>=0.11.9",
+  "pypdfium2>=5.15.2,<6",
   "olefile",
   "pydub",
   "SpeechRecognition>=3.10.4",

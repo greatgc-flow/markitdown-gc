@@ -53,6 +53,8 @@ def pdf(pages):
             commands.append(
                 "q 100 0 0 100 0 0 cm BI /W 1 /H 1 /CS /RGB /BPC 8 ID abc EI Q"
             )
+        if page.get("cover"):
+            commands.append("0 0 100 100 re f")
         commands.extend("0 0 1 1 re S" for _ in range(page.get("vectors", 0)))
         content = add(stream(b"", "\n".join(commands).encode("ascii")))
         children.append(

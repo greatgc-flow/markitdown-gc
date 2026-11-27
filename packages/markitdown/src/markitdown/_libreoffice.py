@@ -156,7 +156,7 @@ def _kill_tree(child: subprocess.Popen, job=None) -> None:
     child.wait(timeout=10)
 
 
-_VERSION = re.compile(r"LibreOffice\s+(\d+(?:\.\d+)+)")
+_VERSION = re.compile(r"\bLibreOffice(?:Dev)?\s+(\d+(?:\.\d+)+)")
 
 
 def _command(executable: str, profile: Path) -> list[str]:

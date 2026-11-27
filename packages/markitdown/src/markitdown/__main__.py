@@ -199,8 +199,31 @@ def main():
         help="With --ocr-report, include up to 120 characters of text per page (may contain sensitive text).",
     )
 
+    parser.add_argument(
+        "--inspect-pdf",
+        action="store_true",
+        help="Inspect PDF page roles and layout area estimates locally and print JSON.",
+    )
     parser.add_argument("filename", nargs="?")
     args = parser.parse_args()
+
+    if args.inspect_pdf:
+        import json
+        from .document_inspection import inspect_pdf
+
+        if not args.filename or any(
+            value not in (None, False)
+            for key, value in vars(args).items()
+            if key not in {"filename", "inspect_pdf"}
+        ):
+            parser.error(
+                "--inspect-pdf requires a local PDF filename and no conversion options"
+            )
+        try:
+            print(json.dumps(inspect_pdf(args.filename, measure=True)))
+        except (OSError, ValueError) as exc:
+            parser.exit(1, f"PDF inspection failed ({type(exc).__name__}).\n")
+        return
 
     if args.guide is not None:
         _check_exclusive(parser, args, "--guide", allowed=("guide",))

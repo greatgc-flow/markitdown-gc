@@ -2,146 +2,65 @@ import struct
 import zipfile
 from io import BytesIO
 from typing import BinaryIO
-from xml.etree import ElementTree as ET
-
-from bs4 import BeautifulSoup, Tag
+from xml.etree import ElementTree
+from lxml import etree
 
 from .math.omml import OMML_NS, oMath2Latex
 
-MATH_ROOT_TEMPLATE = "".join(
-    (
-        "<w:document ",
-        'xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" ',
-        'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ',
-        'xmlns:o="urn:schemas-microsoft-com:office:office" ',
-        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ',
-        'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" ',
-        'xmlns:v="urn:schemas-microsoft-com:vml" ',
-        'xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" ',
-        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ',
-        'xmlns:w10="urn:schemas-microsoft-com:office:word" ',
-        'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ',
-        'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" ',
-        'xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" ',
-        'xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" ',
-        'xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" ',
-        'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14">',
-        "{0}</w:document>",
-    )
-)
+_WORD = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
-def _convert_omath_to_latex(tag: Tag) -> str:
-    """
-    Converts an OMML (Office Math Markup Language) tag to LaTeX format.
-
-    Args:
-        tag (Tag): A BeautifulSoup Tag object representing the OMML element.
-
-    Returns:
-        str: The LaTeX representation of the OMML element.
-    """
-    # Format the tag into a complete XML document string
-    math_root = ET.fromstring(MATH_ROOT_TEMPLATE.format(str(tag)))
-    # Find the 'oMath' element within the XML document
-    math_element = math_root.find(OMML_NS + "oMath")
-    if math_element is None:
-        return ""
-    # Convert the 'oMath' element to LaTeX using the oMath2Latex function
-    latex = oMath2Latex(math_element).latex
-    return latex
+def _parse_part(content: bytes):
+    parser = etree.XMLParser(resolve_entities=False, no_network=True)
+    return etree.fromstring(content, parser=parser)
 
 
-def _get_omath_tag_replacement(tag: Tag, block: bool = False) -> Tag:
-    """
-    Creates a replacement tag for an OMML (Office Math Markup Language) element.
-
-    Args:
-        tag (Tag): A BeautifulSoup Tag object representing the "oMath" element.
-        block (bool, optional): If True, the LaTeX will be wrapped in double dollar signs for block mode. Defaults to False.
-
-    Returns:
-        Tag: A BeautifulSoup Tag object representing the replacement element.
-    """
-    t_tag = Tag(name="w:t")
-    t_tag.string = (
-        f"$${_convert_omath_to_latex(tag)}$$"
-        if block
-        else f"${_convert_omath_to_latex(tag)}$"
-    )
-    r_tag = Tag(name="w:r")
-    r_tag.append(t_tag)
-    return r_tag
-
-
-def _replace_equations(tag: Tag):
-    """
-    Replaces OMML (Office Math Markup Language) elements with their LaTeX equivalents.
-
-    Args:
-        tag (Tag): A BeautifulSoup Tag object representing the OMML element. Could be either "oMathPara" or "oMath".
-
-    Raises:
-        ValueError: If the tag is not supported.
-    """
-    if tag.name == "oMathPara":
-        # Create a new paragraph tag
-        p_tag = Tag(name="w:p")
-        # Replace each 'oMath' child tag with its LaTeX equivalent as block equations
-        for child_tag in tag.find_all("oMath"):
-            p_tag.append(_get_omath_tag_replacement(child_tag, block=True))
-        # Replace the original 'oMathPara' tag with the new paragraph tag
-        tag.replace_with(p_tag)
-    elif tag.name == "oMath":
-        # Replace the 'oMath' tag with its LaTeX equivalent as inline equation
-        tag.replace_with(_get_omath_tag_replacement(tag, block=False))
-    else:
-        raise ValueError(f"Not supported tag: {tag.name}")
+def _serialize_part(root) -> bytes:
+    return etree.tostring(root.getroottree(), encoding="utf-8", xml_declaration=True)
 
 
 def _pre_process_strike(content: bytes) -> bytes:
-    """
-    Pre-processes the strikethrough content in a DOCX -> XML file by normalizing double
-    strikethrough runs to single strikethrough runs.
-
-    Word marks double strikethrough with "w:dstrike", which downstream converters do not
-    recognize, causing those runs to lose their strikethrough entirely. Renaming the tag to
-    "w:strike" preserves the strikethrough semantics.
-
-    Args:
-        content (bytes): The XML content of the DOCX file as bytes.
-
-    Returns:
-        bytes: The processed content with "dstrike" elements renamed to "strike", encoded as bytes.
-    """
-    # Double strikethrough is rare, and parsing/reserializing the XML is expensive
-    # on large documents, so skip the round-trip when there is nothing to rename.
     if b"dstrike" not in content:
         return content
+    root = _parse_part(content)
+    strikes = list(root.iter(_WORD + "dstrike"))
+    for strike in strikes:
+        strike.tag = _WORD + "strike"
+    return _serialize_part(root) if strikes else content
 
-    soup = BeautifulSoup(content.decode(), features="xml")
-    for tag in soup.find_all("dstrike"):
-        tag.name = "strike"
-    return str(soup).encode()
+
+def _math_run(math, fence):
+    run = etree.Element(_WORD + "r")
+    text = etree.SubElement(run, _WORD + "t")
+    equation = ElementTree.fromstring(etree.tostring(math, with_tail=False))
+    text.text = fence + oMath2Latex(equation).latex + fence
+    return run
 
 
 def _pre_process_math(content: bytes) -> bytes:
-    """
-    Pre-processes the math content in a DOCX -> XML file by converting OMML (Office Math Markup Language) elements to LaTeX.
-    This preprocessed content can be directly replaced in the DOCX file -> XMLs.
-
-    Args:
-        content (bytes): The XML content of the DOCX file as bytes.
-
-    Returns:
-        bytes: The processed content with OMML elements replaced by their LaTeX equivalents, encoded as bytes.
-    """
-    soup = BeautifulSoup(content.decode(), features="xml")
-    for tag in soup.find_all("oMathPara"):
-        _replace_equations(tag)
-    for tag in soup.find_all("oMath"):
-        _replace_equations(tag)
-    return str(soup).encode()
+    """Modify only namespaced equation nodes; retain the original document and relationship namespaces."""
+    if b"oMath" not in content:
+        return content
+    root = _parse_part(content)
+    changed = False
+    for block in list(root.iter(OMML_NS + "oMathPara")):
+        parent = block.getparent()
+        if parent is None:
+            continue
+        paragraph = etree.Element(_WORD + "p")
+        for math in block.iter(OMML_NS + "oMath"):
+            paragraph.append(_math_run(math, "$$"))
+        paragraph.tail = block.tail
+        parent.replace(block, paragraph)
+        changed = True
+    for math in list(root.iter(OMML_NS + "oMath")):
+        parent = math.getparent()
+        if parent is not None:
+            run = _math_run(math, "$")
+            run.tail = math.tail
+            parent.replace(math, run)
+            changed = True
+    return _serialize_part(root) if changed else content
 
 
 def _fix_zip_filename_casing(input_docx: BinaryIO) -> BinaryIO:
@@ -222,11 +141,8 @@ def _pre_process_styles(content: bytes) -> bytes:
     Match elements and attributes by namespace URI, preserving their qualified
     names when repairing the XML. Return the original bytes if no repair is needed.
     """
-    from lxml import etree
-
-    namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-    parser = etree.XMLParser(resolve_entities=False, no_network=True)
-    root = etree.fromstring(content, parser=parser)
+    namespace = _WORD
+    root = _parse_part(content)
     changed = False
 
     for style in root.findall(namespace + "style"):
