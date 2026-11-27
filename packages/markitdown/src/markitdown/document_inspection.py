@@ -58,6 +58,9 @@ def _page(page, number, measure, include_text):
     if not all(map(math.isfinite, crop)) or crop[2] <= crop[0] or crop[3] <= crop[1]:
         raise ValueError("Invalid PDF crop box")
     unclear = raw.FPDFPage_GetAnnotCount(page) != 0
+    annotations = unclear
+    covers = []
+    incomplete = False
     tiles = [(crop, "blank")] if measure and not unclear else None
     blocks = []
     images = []
@@ -68,11 +71,11 @@ def _page(page, number, measure, include_text):
     try:
         for order, obj in enumerate(page.get_objects(max_depth=1, textpage=textpage)):
             if order >= _MAX_OBJECTS:
-                unclear, tiles = True, None
+                unclear, incomplete, tiles = True, True, None
                 break
             bounds = obj.get_bounds()
             if not all(map(math.isfinite, bounds)):
-                unclear, tiles = True, None
+                unclear, incomplete, tiles = True, True, None
                 continue
             box = _intersection(crop, bounds)
             if box is None:
@@ -101,6 +104,8 @@ def _page(page, number, measure, include_text):
                 if not complex_paint:
                     kind = "image"
                 images.append((box, order))
+            if kind != "text":
+                covers.append((box, order))
             if kind == "other":
                 unclear = True
             if tiles is not None:
@@ -111,7 +116,7 @@ def _page(page, number, measure, include_text):
     finally:
         textpage.close()
     # Never export words occluded by a later image. Overlapping layers need review.
-    if len(blocks) * len(images) > 1000000:
+    if annotations or incomplete or len(blocks) * len(covers) > 1000000:
         return {
             "number": number,
             "role": "undetermined",
@@ -122,7 +127,7 @@ def _page(page, number, measure, include_text):
         for entry in blocks
         if not any(
             order > entry[2] and _intersection(entry[0], image)
-            for image, order in images
+            for image, order in covers
         )
     ]
     if len(visible) != len(blocks):
@@ -130,8 +135,10 @@ def _page(page, number, measure, include_text):
     # A standalone scan establishes exclusion. Small embedded images can be logos.
     # Mark their content unresolved instead of passing them as complete direct text.
     largest_image = max((_area(box) for box, _ in images), default=0)
-    scan = largest_image >= _area(crop) * 0.5
-    if scan and not uncertain_text:
+    # Match Core scan_like evidence using both sparse text and a material raster.
+    chars = sum(not c.isspace() for _, value, _ in visible for c in value)
+    scan = bool(images) and chars < 30 and largest_image >= _area(crop) * 0.5
+    if scan and not (uncertain_text or unclear):
         role = "mixed" if visible else "ocr"
     elif unclear or uncertain_text or images:
         role = "undetermined"

@@ -53,3 +53,23 @@ def test_partial_coverage_is_never_reported_as_complete():
     assert result["area_percent"] is None
     with pytest.raises(ValueError):
         inspect(b"not a PDF")
+
+
+def test_opaque_drawing_never_exports_covered_words():
+    result = inspect(pdf([{"text": "covered words", "cover": True}]), include_text=True)
+    assert result["pages"] == [{"number": 1, "role": "undetermined", "text": ""}]
+
+
+def test_large_illustration_with_substantial_text_remains_unresolved():
+    result = inspect(
+        pdf(
+            [
+                {
+                    "text": "This paragraph has more than thirty letters in all.",
+                    "images": [(50, 0, 50, 100)],
+                }
+            ]
+        ),
+        measure=True,
+    )
+    assert result["reason"] == "undetermined"
