@@ -509,3 +509,7 @@ trademarks or logos is subject to and must follow
 [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
 Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
 Any use of third-party trademarks or logos are subject to those third-party's policies.
+
+### Inspect a local PDF before conversion
+
+Run `markitdown-gc --inspect-pdf document.pdf` for a read-only JSON report of page roles, inspection coverage and layout area estimates. Results can be undetermined when objects overlap, inspection limits apply, or the text layer cannot be trusted. The Python interface `markitdown.document_inspection.inspect_pdf` also supports early classification and explicit extraction of existing text. These operations do not run OCR.
